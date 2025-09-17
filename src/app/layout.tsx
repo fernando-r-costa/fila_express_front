@@ -1,28 +1,18 @@
-import type { Metadata } from "next";
-import localFont from 'next/font/local';
-import "./globals.css";
+import './globals.css'; // A linha mais importante!
 
-const sqindra = localFont({
-  src: '../assets/fonts/sqindra.ttf',
-  display: 'swap',
-  variable: '--font-sqindra',
-});
-
-export const metadata: Metadata = {
-  title: "Salão Express",
-  description: "Sua fila de beleza virtual",
+export const metadata = {
+  title: 'Teste Tailwind',
+  description: 'Testando a instalação do Tailwind CSS',
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="pt-br">
-      <body className={`${sqindra.variable} bg-salon-secondary text-salon-accent antialiased`}>
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
