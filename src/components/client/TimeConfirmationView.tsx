@@ -1,0 +1,79 @@
+'use client';
+
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Loader2 } from 'lucide-react';
+
+interface TimeConfirmationViewProps {
+  estimatedTime?: number;
+  onConfirm: () => void;
+  onGoBack: () => void;
+  onCancel: () => void;
+}
+
+export function TimeConfirmationView({
+  estimatedTime = 45,
+  onConfirm,
+  onGoBack,
+  onCancel,
+}: TimeConfirmationViewProps) {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleConfirmClick = () => {
+    setIsLoading(true);
+    console.log('Confirmando entrada na fila...');
+
+    setTimeout(() => {
+      setIsLoading(false);
+      onConfirm();
+    }, 1500);
+  };
+
+  return (
+    <Card className="w-full max-w-sm text-center">
+      <CardHeader>
+        <CardTitle className="text-2xl">Tempo de Espera</CardTitle>
+        <CardDescription>
+          Este é o tempo estimado para o atendimento.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="text-6xl font-bold text-primary">{estimatedTime} min</p>
+      </CardContent>
+      <CardFooter className="flex flex-col gap-3">
+        <Button
+          onClick={handleConfirmClick}
+          className="w-full"
+          disabled={isLoading}
+        >
+          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Concordar e Entrar na Fila
+        </Button>
+        <Button
+          onClick={onGoBack}
+          variant="secondary"
+          className="w-full"
+          disabled={isLoading}
+        >
+          Voltar e Modificar Serviços
+        </Button>
+        <Button
+          onClick={onCancel}
+          variant="destructive"
+          className="w-full"
+          disabled={isLoading}
+        >
+          Cancelar Solicitação
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
