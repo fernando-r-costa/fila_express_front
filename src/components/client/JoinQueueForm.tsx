@@ -45,7 +45,7 @@ export function JoinQueueForm({ onSuccess }: JoinQueueFormProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-sm bg-primary shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl">Identificação</CardTitle>
           <CardDescription>Preencha seus dados para começar.</CardDescription>
@@ -85,7 +85,11 @@ export function JoinQueueForm({ onSuccess }: JoinQueueFormProps) {
           </div>
         </CardContent>
         <CardFooter>
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button
+            type="submit"
+            className="w-full bg-secondary text-background"
+            disabled={isLoading}
+          >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Avançar
           </Button>

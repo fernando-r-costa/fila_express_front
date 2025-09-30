@@ -58,13 +58,16 @@ module.exports = {
 				]
 		},
 		backgroundImage: {
-			texture: "url('/textures/concrete.jpg')"
+			texture: "url('/textures/fundo_preto.png')"
 		},
 		borderRadius: {
 			lg: 'var(--radius)',
 			md: 'calc(var(--radius) - 2px)',
 			sm: 'calc(var(--radius) - 4px)'
-		}
+		},
+		boxShadow: {
+        primary: '0 8px 25px hsl(var(--primary) / 0.3)',
+      }
   	}
   },
   plugins: [forms, require("tailwindcss-animate")],

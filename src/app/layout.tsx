@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-br" className={sqindra.variable}>
-      <body className="bg-texture">{children}</body>
+      <body className="bg-foreground bg-texture">{children}</body>
     </html>
   );
 }
