@@ -51,6 +51,12 @@ export function ServiceSelectionForm({
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+
+    if (!isAnyServiceSelected) {
+      console.error('Nenhum serviço selecionado.');
+      return;
+    }
+
     setIsLoading(true);
 
     console.log('Enviando serviços selecionados:', {
@@ -63,6 +69,10 @@ export function ServiceSelectionForm({
       onSuccess(selectedServices);
     }, 1500);
   };
+
+  const isAnyServiceSelected = Object.values(selectedServices).some(
+    (service) => service === true
+  );
 
   return (
     <form onSubmit={handleSubmit}>
@@ -100,7 +110,11 @@ export function ServiceSelectionForm({
           </div>
         </CardContent>
         <CardFooter>
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isLoading || !isAnyServiceSelected}
+          >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Consultar Tempo
           </Button>
