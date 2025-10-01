@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
+import { Suspense } from 'react';
+import Header from '@/components/shared/Header';
 
 const sqindra = localFont({
   src: '../assets/fonts/sqindra.ttf',
@@ -19,8 +21,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-br" className={sqindra.variable}>
-      <body className="bg-foreground bg-texture">{children}</body>
+    <html lang="pt-br" className={`${sqindra.variable} scroll-smooth`}>
+      <body className="flex min-h-0 flex-1 flex-col bg-foreground bg-texture">
+        <Header />
+        <Suspense
+          fallback={
+            <div className="flex flex-grow animate-pulse items-center justify-center">
+              <div className="text-xl font-bold">Carregando...</div>
+            </div>
+          }
+        >
+          <main className="flex-grow overflow-y-auto">{children}</main>
+        </Suspense>
+      </body>
     </html>
   );
 }

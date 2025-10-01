@@ -58,20 +58,18 @@ export function QueueStatusView({
       <CardContent className="grid gap-6">
         <div className="flex justify-around">
           <div>
-            <p className="text-sm font-medium text-secondary">Sua Posição</p>
+            <p className="text-sm font-medium">Sua Posição</p>
             <p className="text-4xl font-bold text-primary">{position}ª</p>
           </div>
           <div>
-            <p className="text-sm font-medium text-secondary">Tempo Estimado</p>
+            <p className="text-sm font-medium">Tempo Estimado</p>
             <p className="text-4xl font-bold text-primary">{time} min</p>
           </div>
         </div>
         {selectedServices.length > 0 && (
           <div>
-            <h3 className="font-semibold text-foreground">
-              Serviços Selecionados
-            </h3>
-            <ul className="mt-2 list-inside list-disc text-secondary">
+            <h3 className="font-semibold">Serviços Selecionados</h3>
+            <ul className="mt-2 list-inside list-disc text-primary">
               {selectedServices.map((service) => (
                 <li key={service}>{service}</li>
               ))}

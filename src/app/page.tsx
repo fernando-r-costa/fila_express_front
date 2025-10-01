@@ -90,8 +90,8 @@ export default function HomePage() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4">
+    <div className="flex flex-col items-center justify-center p-4">
       {renderCurrentStep()}
-    </main>
+    </div>
   );
 }
