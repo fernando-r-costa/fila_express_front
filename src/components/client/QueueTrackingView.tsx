@@ -21,6 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { TimeConfirmationView } from './TimeConfirmationView';
 
 type ServiceData = {
   manicure: boolean;
@@ -28,27 +29,29 @@ type ServiceData = {
   escova: boolean;
 };
 
-interface QueueStatusViewProps {
+interface QueueTrackingViewProps {
   initialPosition?: number;
   initialTime?: number;
   serviceData?: ServiceData;
   onCancel: () => void;
+  onFinalConfirmation: () => void;
 }
 
-export function QueueStatusView({
+export function QueueTrackingView({
   initialPosition = 5,
   initialTime = 45,
   serviceData = { manicure: true, pedicure: true, escova: false },
   onCancel,
-}: QueueStatusViewProps) {
-  const [position, setPosition] = useState(initialPosition);
+  onFinalConfirmation,
+}: QueueTrackingViewProps) {
   const [time, setTime] = useState(initialTime);
 
   useEffect(() => {
+    const ONE_MINUTE = 1000;
     if (time > 0) {
       const timer = setInterval(() => {
         setTime((prevTime) => prevTime - 1);
-      }, 60000); // Decrementa o tempo a cada 1 minuto (60000 ms)
+      }, ONE_MINUTE);
 
       return () => clearInterval(timer);
     }
@@ -57,6 +60,16 @@ export function QueueStatusView({
   const selectedServices = Object.entries(serviceData)
     .filter(([, isSelected]) => isSelected)
     .map(([service]) => service.charAt(0).toUpperCase() + service.slice(1));
+
+  if (time <= 30) {
+    return (
+      <TimeConfirmationView
+        remainingTime={time}
+        onConfirm={onFinalConfirmation}
+        onCancel={onCancel}
+      />
+    );
+  }
 
   return (
     <Card className="w-full max-w-sm text-center">
@@ -70,7 +83,9 @@ export function QueueStatusView({
         <div className="flex justify-around">
           <div>
             <p className="text-sm font-medium">Sua Posição</p>
-            <p className="text-4xl font-bold text-primary">{position}ª</p>
+            <p className="text-4xl font-bold text-primary">
+              {initialPosition}ª
+            </p>
           </div>
           <div>
             <p className="text-sm font-medium">Tempo Estimado</p>

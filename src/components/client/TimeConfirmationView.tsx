@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -10,68 +9,43 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 interface TimeConfirmationViewProps {
-  estimatedTime?: number;
+  remainingTime: number;
   onConfirm: () => void;
-  onGoBack: () => void;
   onCancel: () => void;
 }
 
 export function TimeConfirmationView({
-  estimatedTime = 45,
+  remainingTime,
   onConfirm,
-  onGoBack,
   onCancel,
 }: TimeConfirmationViewProps) {
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleConfirmClick = () => {
-    setIsLoading(true);
-    console.log('Confirmando entrada na fila...');
-
-    setTimeout(() => {
-      setIsLoading(false);
-      onConfirm();
-    }, 1500);
-  };
-
   return (
-    <Card className="w-full max-w-sm text-center">
+    <Card className="w-full max-w-sm border-4 border-yellow-500 text-center">
       <CardHeader>
-        <CardTitle className="text-2xl">Tempo de Espera</CardTitle>
+        <div className="mb-4 flex justify-center">
+          <AlertTriangle className="h-12 w-12 text-yellow-500" />
+        </div>
+        <CardTitle className="text-2xl">Sua Vez está Chegando!</CardTitle>
         <CardDescription>
-          Este é o tempo estimado para o atendimento.
+          Falta pouco para o seu atendimento. Por favor, confirme sua presença
+          para garantir seu horário.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="text-6xl font-bold text-primary">{estimatedTime} min</p>
+        <div>
+          <p className="text-sm font-medium">Tempo Estimado Restante</p>
+          <p className="text-5xl font-bold text-primary">{remainingTime} min</p>
+        </div>
       </CardContent>
       <CardFooter className="flex flex-col gap-3">
-        <Button
-          onClick={handleConfirmClick}
-          className="w-full"
-          disabled={isLoading}
-        >
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Concordar e Entrar na Fila
+        <Button className="w-full" onClick={onConfirm}>
+          Confirmar Presença
         </Button>
-        <Button
-          onClick={onGoBack}
-          variant="secondary"
-          className="w-full"
-          disabled={isLoading}
-        >
-          Voltar e Modificar Serviços
-        </Button>
-        <Button
-          onClick={onCancel}
-          variant="destructive"
-          className="w-full"
-          disabled={isLoading}
-        >
-          Cancelar Solicitação
+        <Button variant="ghost" className="w-full" onClick={onCancel}>
+          Cancelar Atendimento
         </Button>
       </CardFooter>
     </Card>

@@ -3,18 +3,21 @@
 import { useState } from 'react';
 import { JoinQueueForm } from '@/components/client/JoinQueueForm';
 import { ServiceSelectionForm } from '@/components/client/ServiceSelectionForm';
-import { TimeConfirmationView } from '@/components/client/TimeConfirmationView';
-import { QueueStatusView } from '@/components/client/QueueStatusView';
+import { TimeEstimateView } from '@/components/client/TimeEstimateView';
+import { QueueTrackingView } from '@/components/client/QueueTrackingView';
 import { TimeConfirmationSkeleton } from '@/components/client/TimeConfirmationSkeleton';
+import { calculateMockWaitTime } from '@/lib/utils';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
+type WaitData = { estimatedTime: number; position: number };
 
 export default function HomePage() {
   const [formStep, setFormStep] = useState('identification');
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [serviceData, setServiceData] = useState<ServiceData | null>(null);
   const [isCalculatingTime, setIsCalculatingTime] = useState(false);
+  const [waitData, setWaitData] = useState<WaitData | null>(null);
 
   const handleIdentificationSuccess = (data: ClientData) => {
     setClientData(data);
@@ -26,6 +29,10 @@ export default function HomePage() {
     setServiceData(services);
     console.log({ client: clientData, services });
 
+    // Simula o cálculo e armazena os dados
+    const calculatedData = calculateMockWaitTime(services);
+    setWaitData(calculatedData);
+
     setTimeout(() => {
       setIsCalculatingTime(false);
       setFormStep('confirmation');
@@ -35,6 +42,12 @@ export default function HomePage() {
   const handleConfirmation = () => {
     console.log('CLIENTE CONFIRMOU! ENTRANDO NA FILA...');
     setFormStep('inQueue');
+  };
+
+  const handleFinalConfirmation = () => {
+    console.log('CLIENTE CONFIRMOU PRESENÇA!');
+    // mudar para uma tela final de "Confirmado! Já estamos te esperando!"
+    setFormStep('confirmed');
   };
 
   const handleGoBack = () => {
@@ -67,19 +80,26 @@ export default function HomePage() {
         }
         return null;
       case 'confirmation':
-        return (
-          <TimeConfirmationView
-            onConfirm={handleConfirmation}
-            onGoBack={handleGoBack}
-            onCancel={handleCancel}
-          />
-        );
-      case 'inQueue':
-        if (serviceData) {
+        if (waitData) {
           return (
-            <QueueStatusView
+            <TimeEstimateView
+              estimatedTime={waitData.estimatedTime}
+              onConfirm={handleConfirmation}
+              onGoBack={handleGoBack}
+              onCancel={handleCancel}
+            />
+          );
+        }
+        return null;
+      case 'inQueue':
+        if (waitData && serviceData) {
+          return (
+            <QueueTrackingView
+              initialTime={waitData.estimatedTime}
+              initialPosition={waitData.position}
               serviceData={serviceData}
               onCancel={handleCancel}
+              onFinalConfirmation={handleFinalConfirmation}
             />
           );
         }
