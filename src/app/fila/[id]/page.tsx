@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { QueueTrackingView } from '@/components/client/QueueTrackingView';
 import { TimeConfirmationSkeleton } from '@/components/client/TimeConfirmationSkeleton';
 
@@ -14,13 +15,15 @@ type MockData = {
   serviceData: { manicure: boolean; pedicure: boolean; escova: boolean };
 };
 
-export default function QueuePage({ params }: { params: { id: string } }) {
+export default function QueuePage() {
+  const params = useParams();
+  const id = params.id as string;
   const [data, setData] = useState<MockData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // 1. SIMULANDO A BUSCA DE DADOS NA API USANDO O ID
-    console.log(`Buscando dados para o cliente com ID: ${params.id}`);
+    console.log(`Buscando dados para o cliente com ID: ${id}`);
     setTimeout(() => {
       // Aqui viriam os dados do seu backend
       const fetchedData: MockData = {
@@ -31,7 +34,7 @@ export default function QueuePage({ params }: { params: { id: string } }) {
       setData(fetchedData);
       setIsLoading(false);
     }, 1500); // Simula 1.5s de loading de rede
-  }, [params.id]);
+  }, [id]);
 
   const handleCancel = () => {
     console.log('PROCESSO CANCELADO PELO LINK DIRETO');

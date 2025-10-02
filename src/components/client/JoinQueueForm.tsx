@@ -45,7 +45,7 @@ export function JoinQueueForm({ onSuccess }: JoinQueueFormProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <Card className="w-full max-w-sm shadow-lg">
+      <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-2xl">Identificação</CardTitle>
           <CardDescription>Preencha seus dados para começar.</CardDescription>
