@@ -22,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-br" className={`${sqindra.variable} scroll-smooth`}>
-      <body className="flex min-h-0 flex-1 flex-col bg-foreground bg-texture">
+      <body className="flex min-h-0 flex-1 flex-col bg-foreground bg-texture bg-cover bg-center bg-no-repeat">
         <Header />
         <Suspense
           fallback={
