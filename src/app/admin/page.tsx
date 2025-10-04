@@ -28,7 +28,7 @@ export default function AdminLoginPage() {
     setError(null);
 
     setTimeout(() => {
-      if (username === 'salao_admin' && password === 'senha123') {
+      if (username === 'admin' && password === 'admin') {
         router.push('/admin/dashboard');
       } else {
         setError('Usuário ou senha inválidos. Tente novamente.');

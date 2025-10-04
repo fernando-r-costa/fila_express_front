@@ -5,8 +5,7 @@ import { useParams } from 'next/navigation';
 import { QueueTrackingView } from '@/components/client/QueueTrackingView';
 import { TimeConfirmationSkeleton } from '@/components/client/TimeConfirmationSkeleton';
 
-// Em um cenário real, você teria uma função de serviço para buscar dados
-// import { fetchQueueStatusById } from '@/services/queueService';
+// função de serviço para buscar dados
 
 // Mock de dados para teste
 type MockData = {
@@ -25,29 +24,26 @@ export default function QueuePage() {
     // 1. SIMULANDO A BUSCA DE DADOS NA API USANDO O ID
     console.log(`Buscando dados para o cliente com ID: ${id}`);
     setTimeout(() => {
-      // Aqui viriam os dados do seu backend
       const fetchedData: MockData = {
-        initialTime: 45, // Ex: Dado vindo do backend
-        initialPosition: 5, // Ex: Dado vindo do backend
+        initialTime: 45,
+        initialPosition: 5,
         serviceData: { manicure: true, pedicure: true, escova: false },
       };
       setData(fetchedData);
       setIsLoading(false);
-    }, 1500); // Simula 1.5s de loading de rede
+    }, 1500);
   }, [id]);
 
   const handleCancel = () => {
     console.log('PROCESSO CANCELADO PELO LINK DIRETO');
-    // Aqui você poderia, por exemplo, redirecionar para a home
-    // window.location.href = '/';
+    // redirecionar para a home
   };
 
   const handleFinalConfirmation = () => {
     console.log('CLIENTE CONFIRMOU PRESENÇA PELO LINK DIRETO!');
-    // Mudar para uma tela de sucesso
+    // tela de sucesso
   };
 
-  // Enquanto busca os dados, mostre um skeleton
   if (isLoading || !data) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -56,7 +52,6 @@ export default function QueuePage() {
     );
   }
 
-  // 2. APENAS RENDERIZE O COMPONENTE PRINCIPAL E PASSE OS DADOS
   return (
     <div className="flex min-h-screen items-center justify-center">
       <QueueTrackingView
