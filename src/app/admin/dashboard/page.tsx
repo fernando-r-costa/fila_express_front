@@ -369,7 +369,7 @@ export default function DashboardPage() {
     <TooltipProvider>
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold text-secondary">
+          <h1 className="bg-foreground/50 px-4 text-2xl font-bold uppercase text-secondary">
             Gerenciamento da Fila
           </h1>
           <div className="flex items-center gap-2">
@@ -380,7 +380,7 @@ export default function DashboardPage() {
                   Adicionar Cliente
                 </Button>
               </SheetTrigger>
-              <SheetContent className="w-full max-w-md overflow-y-auto bg-foreground">
+              <SheetContent className="w-full max-w-md bg-card">
                 <SheetHeader>
                   <SheetTitle>Adicionar Novo Cliente na Fila</SheetTitle>
                 </SheetHeader>
@@ -404,7 +404,7 @@ export default function DashboardPage() {
                   Configurações
                 </Button>
               </SheetTrigger>
-              <SheetContent className="w-full max-w-md">
+              <SheetContent className="w-full max-w-md bg-card">
                 <SheetHeader>
                   <SheetTitle>Configurações do Sistema</SheetTitle>
                 </SheetHeader>
