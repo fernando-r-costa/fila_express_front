@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
+import { SettingsSheet } from '@/components/admin/SettingsSheet';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
@@ -277,6 +278,7 @@ function QueueColumn({
 export default function DashboardPage() {
   const [queueData, setQueueData] = useState(initialMockData);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isSettingsSheetOpen, setIsSettingsSheetOpen] = useState(false);
   const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
   const [clientInServiceWarning, setClientInServiceWarning] = useState<
     string | null
@@ -314,6 +316,12 @@ export default function DashboardPage() {
     };
     setQueueData((prevData) => [...prevData, newClient]);
     setIsSheetOpen(false);
+  };
+
+  const handleSettingsSave = (settings: any) => {
+    console.log('Configurações salvas no painel principal!', settings);
+    // Aqui você poderia, por exemplo, atualizar o estado global da aplicação
+    setIsSettingsSheetOpen(false);
   };
 
   const handleCallNext = (queueType: QueueType) => {
@@ -386,10 +394,23 @@ export default function DashboardPage() {
               <History className="mr-2 h-4 w-4" />
               Histórico
             </Button>
-            <Button variant="outline">
-              <Settings className="mr-2 h-4 w-4" />
-              Configurações
-            </Button>
+            <Sheet
+              open={isSettingsSheetOpen}
+              onOpenChange={setIsSettingsSheetOpen}
+            >
+              <SheetTrigger asChild>
+                <Button variant="outline">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Configurações
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="w-full max-w-md">
+                <SheetHeader>
+                  <SheetTitle>Configurações do Sistema</SheetTitle>
+                </SheetHeader>
+                <SettingsSheet onSave={handleSettingsSave} />
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:items-start">
