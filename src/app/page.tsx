@@ -1,96 +1,50 @@
 'use client';
 
-import { useState } from 'react';
-import { JoinQueueForm } from '@/components/client/JoinQueueForm';
-import { ServiceSelectionForm } from '@/components/client/ServiceSelectionForm';
-import { TimeEstimateView } from '@/components/client/TimeEstimateView';
+import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
 import { QueueTrackingView } from '@/components/client/QueueTrackingView';
-import { TimeConfirmationSkeleton } from '@/components/client/TimeConfirmationSkeleton';
-import { calculateMockWaitTime } from '@/lib/utils';
+import { useState } from 'react';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
+import { CheckCircle } from 'lucide-react';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
 type WaitData = { estimatedTime: number; position: number };
 
 export default function HomePage() {
-  const [formStep, setFormStep] = useState('identification');
-  const [clientData, setClientData] = useState<ClientData | null>(null);
-  const [serviceData, setServiceData] = useState<ServiceData | null>(null);
-  const [isCalculatingTime, setIsCalculatingTime] = useState(false);
+  const [formStep, setFormStep] = useState('signup');
   const [waitData, setWaitData] = useState<WaitData | null>(null);
+  const [serviceData, setServiceData] = useState<ServiceData | null>(null);
 
-  const handleIdentificationSuccess = (data: ClientData) => {
-    setClientData(data);
-    setFormStep('serviceSelection');
-  };
-
-  const handleServiceSelectionSuccess = (services: ServiceData) => {
-    setIsCalculatingTime(true);
+  const handleFlowComplete = (
+    client: ClientData,
+    services: ServiceData,
+    wait: WaitData
+  ) => {
+    console.log('CLIENTE ENTROU NA FILA PELA HOME:', {
+      client,
+      services,
+      wait,
+    });
+    setWaitData(wait);
     setServiceData(services);
-    console.log({ client: clientData, services });
-
-    // Simula o cálculo e armazena os dados
-    const calculatedData = calculateMockWaitTime(services);
-    setWaitData(calculatedData);
-
-    setTimeout(() => {
-      setIsCalculatingTime(false);
-      setFormStep('confirmation');
-    }, 2000); // Simula 2 segundos de cálculo de tempo
-  };
-
-  const handleConfirmation = () => {
-    console.log('CLIENTE CONFIRMOU! ENTRANDO NA FILA...');
     setFormStep('inQueue');
   };
 
+  const handleCancel = () => {
+    setFormStep('signup');
+  };
+
   const handleFinalConfirmation = () => {
-    console.log('CLIENTE CONFIRMOU PRESENÇA!');
-    // mudar para uma tela final de "Confirmado! Já estamos te esperando!"
     setFormStep('confirmed');
   };
 
-  const handleGoBack = () => {
-    setFormStep('serviceSelection');
-  };
-
-  const handleCancel = () => {
-    console.log('PROCESSO CANCELADO');
-    setFormStep('identification');
-    setClientData(null);
-    setServiceData(null);
-  };
-
-  const renderCurrentStep = () => {
-    if (isCalculatingTime) {
-      return <TimeConfirmationSkeleton />;
-    }
-
+  const renderContent = () => {
     switch (formStep) {
-      case 'identification':
-        return <JoinQueueForm onSuccess={handleIdentificationSuccess} />;
-      case 'serviceSelection':
-        if (clientData) {
-          return (
-            <ServiceSelectionForm
-              clientData={clientData}
-              onSuccess={handleServiceSelectionSuccess}
-            />
-          );
-        }
-        return null;
-      case 'confirmation':
-        if (waitData) {
-          return (
-            <TimeEstimateView
-              estimatedTime={waitData.estimatedTime}
-              onConfirm={handleConfirmation}
-              onGoBack={handleGoBack}
-              onCancel={handleCancel}
-            />
-          );
-        }
-        return null;
       case 'inQueue':
         if (waitData && serviceData) {
           return (
@@ -104,14 +58,34 @@ export default function HomePage() {
           );
         }
         return null;
+
+      case 'confirmed':
+        return (
+          <Card className="w-full max-w-sm text-center">
+            <CardHeader>
+              <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
+              <CardTitle>Presença Confirmada!</CardTitle>
+              <CardDescription>
+                Obrigado! Estamos aguardando você.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        );
+
+      case 'signup':
       default:
-        return <JoinQueueForm onSuccess={handleIdentificationSuccess} />;
+        return (
+          <ClientSignUpFlow
+            onFlowComplete={handleFlowComplete}
+            onCancel={handleCancel}
+          />
+        );
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center p-4">
-      {renderCurrentStep()}
+    <div className="flex flex-col items-center justify-center">
+      {renderContent()}
     </div>
   );
 }

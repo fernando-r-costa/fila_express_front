@@ -21,6 +21,22 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -31,12 +47,18 @@ import {
   History,
   Settings,
 } from 'lucide-react';
-import React from 'react';
+import React, { useState } from 'react';
+import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
 
-const mockQueueData = [
+type ClientData = { name: string; phone: string; email: string };
+type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
+type WaitData = { estimatedTime: number; position: number };
+
+// Dados iniciais da fila
+const initialMockData = [
   // --- Fila de Manicure & Pedicure (5 Clientes) ---
   {
-    position: 0, // Posição 0 para quem está em atendimento
+    position: 0,
     name: 'Ana Silva',
     services: ['Manicure'],
     queue: 'manicure_pedicure',
@@ -44,7 +66,7 @@ const mockQueueData = [
     waitTime: 0,
   },
   {
-    position: 1, // O próximo da fila
+    position: 1,
     name: 'Bruna Costa',
     services: ['Manicure', 'Pedicure'],
     queue: 'manicure_pedicure',
@@ -52,7 +74,7 @@ const mockQueueData = [
     waitTime: 35,
   },
   {
-    position: 2, // Será "Notificado" pois o tempo é <= 30
+    position: 2,
     name: 'Mariana Alves',
     services: ['Pedicure'],
     queue: 'manicure_pedicure',
@@ -60,7 +82,7 @@ const mockQueueData = [
     waitTime: 20,
   },
   {
-    position: 3, // Status "Aguardando" normal
+    position: 3,
     name: 'Felipa Souza',
     services: ['Manicure'],
     queue: 'manicure_pedicure',
@@ -68,17 +90,16 @@ const mockQueueData = [
     waitTime: 60,
   },
   {
-    position: 4, // Status "Aguardando" normal
+    position: 4,
     name: 'Carla Dias',
     services: ['Manicure'],
     queue: 'manicure_pedicure',
     status: 'aguardando',
     waitTime: 85,
   },
-
   // --- Fila de Escova (3 Clientes) ---
   {
-    position: 0, // Posição 0 para quem está em atendimento
+    position: 0,
     name: 'Ricarda Gomes',
     services: ['Escova'],
     queue: 'escova',
@@ -86,7 +107,7 @@ const mockQueueData = [
     waitTime: 0,
   },
   {
-    position: 1, // O próximo da fila
+    position: 1,
     name: 'Julia Lima',
     services: ['Escova'],
     queue: 'escova',
@@ -94,7 +115,7 @@ const mockQueueData = [
     waitTime: 45,
   },
   {
-    position: 2, // Será "Notificado" pois o tempo é <= 30
+    position: 2,
     name: 'Luiza Pereira',
     services: ['Escova'],
     queue: 'escova',
@@ -103,7 +124,8 @@ const mockQueueData = [
   },
 ];
 
-type Client = (typeof mockQueueData)[0];
+type Client = (typeof initialMockData)[0];
+type QueueType = 'manicure_pedicure' | 'escova';
 
 function StatusBadge({
   client,
@@ -112,33 +134,33 @@ function StatusBadge({
   client: Client;
   waitingClients: Client[];
 }) {
-  if (client.status === 'em_atendimento') {
-    return <Badge>Em Atendimento</Badge>;
-  }
-
-  const isNext =
-    waitingClients.length > 0 && waitingClients[0].name === client.name;
-  if (isNext) {
+  if (client.status === 'em_atendimento') return <Badge>Em Atendimento</Badge>;
+  if (waitingClients.length > 0 && waitingClients[0].name === client.name)
     return <Badge variant="secondary">Próximo Atendimento</Badge>;
-  }
-
-  if (client.waitTime <= 30) {
+  if (client.waitTime <= 30)
     return (
       <Badge variant="outline" className="border-yellow-500 text-yellow-500">
         Notificado
       </Badge>
     );
-  }
-
   return <Badge variant="outline">Aguardando</Badge>;
 }
 
 interface QueueColumnProps {
   title: string;
   clients: Client[];
+  onCallNext: () => void;
+  onFinish: (clientName: string) => void;
+  onRemove: (clientName: string) => void;
 }
 
-function QueueColumn({ title, clients }: QueueColumnProps) {
+function QueueColumn({
+  title,
+  clients,
+  onCallNext,
+  onFinish,
+  onRemove,
+}: QueueColumnProps) {
   const servicingClient = clients.find((c) => c.status === 'em_atendimento');
   const waitingClients = clients
     .filter((c) => c.status === 'aguardando')
@@ -156,7 +178,7 @@ function QueueColumn({ title, clients }: QueueColumnProps) {
             {clients.length} cliente(s) no total.
           </CardDescription>
         </div>
-        <Button>Chamar Próximo</Button>
+        <Button onClick={onCallNext}>Chamar Próximo</Button>
       </CardHeader>
       <CardContent>
         <Table>
@@ -172,7 +194,6 @@ function QueueColumn({ title, clients }: QueueColumnProps) {
             {allClientsInOrder.map((client) => {
               const isWaiting = client.status === 'aguardando';
               let etaTime: string | null = null;
-
               if (isWaiting && client.waitTime) {
                 const now = new Date();
                 const etaDate = new Date(
@@ -183,7 +204,6 @@ function QueueColumn({ title, clients }: QueueColumnProps) {
                   minute: '2-digit',
                 });
               }
-
               return (
                 <TableRow key={client.name}>
                   <TableCell className="font-bold">
@@ -214,7 +234,11 @@ function QueueColumn({ title, clients }: QueueColumnProps) {
                       {client.status === 'em_atendimento' && (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="outline" size="icon">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => onFinish(client.name)}
+                            >
                               <CheckCircle className="h-4 w-4 text-green-500" />
                             </Button>
                           </TooltipTrigger>
@@ -229,6 +253,7 @@ function QueueColumn({ title, clients }: QueueColumnProps) {
                             variant="ghost"
                             size="icon"
                             className="text-destructive"
+                            onClick={() => onRemove(client.name)}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -250,10 +275,87 @@ function QueueColumn({ title, clients }: QueueColumnProps) {
 }
 
 export default function DashboardPage() {
-  const manicureQueue = mockQueueData.filter(
+  const [queueData, setQueueData] = useState(initialMockData);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
+  const [clientInServiceWarning, setClientInServiceWarning] = useState<
+    string | null
+  >(null);
+
+  const manicureQueue = queueData.filter(
     (c) => c.queue === 'manicure_pedicure'
   );
-  const escovaQueue = mockQueueData.filter((c) => c.queue === 'escova');
+  const escovaQueue = queueData.filter((c) => c.queue === 'escova');
+
+  const handleManualAddComplete = (
+    client: ClientData,
+    services: ServiceData,
+    wait: WaitData
+  ) => {
+    const servicesList = (
+      Object.keys(services) as Array<keyof ServiceData>
+    ).filter((k) => services[k] === true);
+    const targetQueue = servicesList.includes('escova')
+      ? 'escova'
+      : 'manicure_pedicure';
+
+    const queueToAdd = queueData.filter(
+      (c) => c.queue === targetQueue && c.status === 'aguardando'
+    );
+    const newPosition = Math.max(0, ...queueToAdd.map((c) => c.position)) + 1;
+
+    const newClient = {
+      position: newPosition,
+      name: client.name,
+      services: servicesList,
+      queue: targetQueue,
+      status: 'aguardando',
+      waitTime: wait.estimatedTime,
+    };
+    setQueueData((prevData) => [...prevData, newClient]);
+    setIsSheetOpen(false);
+  };
+
+  const handleCallNext = (queueType: QueueType) => {
+    const servicingClient = queueData.find(
+      (c) => c.queue === queueType && c.status === 'em_atendimento'
+    );
+    if (servicingClient) {
+      setClientInServiceWarning(servicingClient.name);
+      setIsWarningModalOpen(true);
+      return;
+    }
+    const waitingClients = queueData
+      .filter((c) => c.queue === queueType && c.status === 'aguardando')
+      .sort((a, b) => a.position - b.position);
+    if (waitingClients.length === 0) return;
+    const nextClient = waitingClients[0];
+    const updatedQueue = queueData.map((client) =>
+      client.name === nextClient.name
+        ? { ...client, status: 'em_atendimento', position: 0 }
+        : client
+    );
+    setQueueData(updatedQueue);
+  };
+
+  const handleFinishService = (clientName: string) => {
+    const finishedClient = queueData.find((c) => c.name === clientName);
+    if (!finishedClient) return;
+
+    let updatedQueue = queueData.filter((client) => client.name !== clientName);
+    updatedQueue = updatedQueue.map((client) => {
+      if (
+        client.queue === finishedClient.queue &&
+        client.position > finishedClient.position
+      ) {
+        return { ...client, position: client.position - 1 };
+      }
+      return client;
+    });
+    setQueueData(updatedQueue);
+  };
+
+  const handleRemoveFromQueue = handleFinishService;
 
   return (
     <TooltipProvider>
@@ -263,10 +365,23 @@ export default function DashboardPage() {
             Gerenciamento da Fila
           </h1>
           <div className="flex items-center gap-2">
-            <Button variant="outline">
-              <UserPlus className="mr-2 h-4 w-4" />
-              Adicionar Cliente
-            </Button>
+            <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Adicionar Cliente
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="w-full max-w-md overflow-y-auto bg-foreground">
+                <SheetHeader>
+                  <SheetTitle>Adicionar Novo Cliente na Fila</SheetTitle>
+                </SheetHeader>
+                <ClientSignUpFlow
+                  onFlowComplete={handleManualAddComplete}
+                  onCancel={() => setIsSheetOpen(false)}
+                />
+              </SheetContent>
+            </Sheet>
             <Button variant="outline">
               <History className="mr-2 h-4 w-4" />
               Histórico
@@ -278,9 +393,39 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:items-start">
-          <QueueColumn title="Manicure & Pedicure" clients={manicureQueue} />
-          <QueueColumn title="Escova" clients={escovaQueue} />
+          <QueueColumn
+            title="Manicure & Pedicure"
+            clients={manicureQueue}
+            onCallNext={() => handleCallNext('manicure_pedicure')}
+            onFinish={handleFinishService}
+            onRemove={handleRemoveFromQueue}
+          />
+          <QueueColumn
+            title="Escova"
+            clients={escovaQueue}
+            onCallNext={() => handleCallNext('escova')}
+            onFinish={handleFinishService}
+            onRemove={handleRemoveFromQueue}
+          />
         </div>
+        <AlertDialog
+          open={isWarningModalOpen}
+          onOpenChange={setIsWarningModalOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Atendimento em Andamento</AlertDialogTitle>
+              <AlertDialogDescription>
+                Você precisa finalizar o atendimento de{' '}
+                <span className="font-bold">{clientInServiceWarning}</span>{' '}
+                antes de chamar o próximo cliente.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogAction>Entendido</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </TooltipProvider>
   );
