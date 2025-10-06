@@ -36,10 +36,12 @@ export default function HomePage() {
   };
 
   const handleCancel = () => {
+    console.log('O cliente saiu da fila.');
     setFormStep('signup');
   };
 
   const handleFinalConfirmation = () => {
+    console.log('O cliente confirmou sua presença.');
     setFormStep('confirmed');
   };
 

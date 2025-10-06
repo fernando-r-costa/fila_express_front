@@ -40,7 +40,6 @@ export function ClientSignUpFlow({
     setServiceData(services);
     const calculatedData = calculateMockWaitTime(services);
     setWaitData(calculatedData);
-
     setTimeout(() => {
       setIsCalculatingTime(false);
       setFormStep('confirmation');
@@ -55,6 +54,14 @@ export function ClientSignUpFlow({
 
   const handleGoBack = () => {
     setFormStep('serviceSelection');
+  };
+
+  const handleResetFlow = () => {
+    console.log('O cliente cancelou a inscrição.');
+    setFormStep('identification');
+    setClientData(null);
+    setServiceData(null);
+    setWaitData(null);
   };
 
   const renderCurrentStep = () => {
@@ -81,7 +88,7 @@ export function ClientSignUpFlow({
               estimatedTime={waitData.estimatedTime}
               onConfirm={handleConfirmation}
               onGoBack={handleGoBack}
-              onCancel={onCancel}
+              onCancel={handleResetFlow}
             />
           );
         }

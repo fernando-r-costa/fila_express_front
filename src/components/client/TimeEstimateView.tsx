@@ -37,6 +37,15 @@ export function TimeEstimateView({
     }, 1500);
   };
 
+  const now = new Date();
+  const estimatedServiceTime = new Date(now.getTime() + estimatedTime * 60000); // 60000ms = 1 minuto
+  const formattedEta = estimatedServiceTime.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  console.log(`Horário estimado de atendimento: ${formattedEta}`);
+
   return (
     <Card className="w-full max-w-sm text-center">
       <CardHeader>
@@ -47,6 +56,10 @@ export function TimeEstimateView({
       </CardHeader>
       <CardContent>
         <p className="text-6xl font-bold text-primary">{estimatedTime} min</p>
+        <p className="mt-2 text-lg text-muted-foreground">
+          Horário Previsto:{' '}
+          <span className="font-semibold text-primary">{formattedEta}</span>
+        </p>
       </CardContent>
       <CardFooter className="flex flex-col gap-3">
         <Button

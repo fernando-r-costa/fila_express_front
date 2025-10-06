@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,17 +45,48 @@ export function QueueTrackingView({
   onFinalConfirmation,
 }: QueueTrackingViewProps) {
   const [time, setTime] = useState(initialTime);
+  const [position, setPosition] = useState(initialPosition);
+  const [eta, setEta] = useState<string | null>(null);
+
+  const timePerPosition = useMemo(() => {
+    if (initialPosition <= 1 || initialTime <= 30) {
+      return Infinity;
+    }
+    return (initialTime - 30) / (initialPosition - 1);
+  }, [initialTime, initialPosition]);
 
   useEffect(() => {
+    const now = new Date();
+    const etaDate = new Date(now.getTime() + initialTime * 60000);
+    const formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    setEta(formattedEta);
+  }, [initialTime]);
+
+  useEffect(() => {
+    console.log(`Tempo restante: ${time} min, Posição atual: ${position}`);
+
     const ONE_MINUTE = 1000;
+
     if (time > 0) {
       const timer = setInterval(() => {
         setTime((prevTime) => prevTime - 1);
       }, ONE_MINUTE);
-
       return () => clearInterval(timer);
     }
-  }, [time]);
+  }, [time, position]);
+
+  useEffect(() => {
+    if (timePerPosition === Infinity) return;
+
+    const elapsedTime = initialTime - time;
+    const positionsAdvanced = Math.floor(elapsedTime / timePerPosition);
+    const newPosition = initialPosition - positionsAdvanced;
+
+    setPosition(Math.max(1, newPosition));
+  }, [time, initialTime, initialPosition, timePerPosition]);
 
   const selectedServices = Object.entries(serviceData)
     .filter(([, isSelected]) => isSelected)
@@ -76,20 +107,18 @@ export function QueueTrackingView({
       <CardHeader>
         <CardTitle className="text-2xl">Você está na Fila!</CardTitle>
         <CardDescription>
-          Acompanhe sua posição e o tempo estimado.
+          Acompanhe sua posição e o horário previsto.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6">
         <div className="flex justify-around">
           <div>
             <p className="text-sm font-medium">Sua Posição</p>
-            <p className="text-4xl font-bold text-primary">
-              {initialPosition}ª
-            </p>
+            <p className="text-4xl font-bold text-primary">{position}ª</p>
           </div>
           <div>
-            <p className="text-sm font-medium">Tempo Estimado</p>
-            <p className="text-4xl font-bold text-primary">{time} min</p>
+            <p className="text-sm font-medium">Horário Previsto</p>
+            <p className="text-4xl font-bold text-primary">{eta}</p>
           </div>
         </div>
         {selectedServices.length > 0 && (
