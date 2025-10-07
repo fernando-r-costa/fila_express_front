@@ -79,8 +79,10 @@ export function ServiceSelectionForm({
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-2xl">Seleção de Serviços</CardTitle>
-          <CardDescription>
-            Escolha um ou mais serviços que deseja realizar.
+          <CardDescription className="text-center">
+            Escolha um ou mais serviços
+            <br />
+            que deseja realizar.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">

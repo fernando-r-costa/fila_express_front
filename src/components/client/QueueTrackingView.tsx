@@ -34,7 +34,7 @@ interface QueueTrackingViewProps {
   initialTime?: number;
   serviceData?: ServiceData;
   onCancel: () => void;
-  onFinalConfirmation: () => void;
+  onFinalConfirmation: (currentTime: number) => void;
 }
 
 export function QueueTrackingView({
@@ -96,66 +96,71 @@ export function QueueTrackingView({
     return (
       <TimeConfirmationView
         remainingTime={time}
-        onConfirm={onFinalConfirmation}
+        onConfirm={() => onFinalConfirmation(time)}
         onCancel={onCancel}
       />
     );
   }
 
   return (
-    <Card className="w-full max-w-sm text-center">
-      <CardHeader>
-        <CardTitle className="text-2xl">Você está na Fila!</CardTitle>
-        <CardDescription>
-          Acompanhe sua posição e o horário previsto.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-6">
-        <div className="flex justify-around">
-          <div>
-            <p className="text-sm font-medium">Sua Posição</p>
-            <p className="text-4xl font-bold text-primary">{position}ª</p>
+    <form>
+      <Card className="w-full max-w-sm text-center">
+        <CardHeader>
+          <CardTitle className="text-2xl">Você está na Fila!</CardTitle>
+          <CardDescription>
+            Acompanhe sua posição e<br /> o horário previsto.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="flex justify-center gap-4">
+            <div>
+              <p className="text-sm font-medium">Sua Posição:</p>
+              <p className="text-4xl font-bold text-primary">{position}ª</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium">Horário Previsto:</p>
+              <p className="text-4xl font-bold text-primary">{eta}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-medium">Horário Previsto</p>
-            <p className="text-4xl font-bold text-primary">{eta}</p>
-          </div>
-        </div>
-        {selectedServices.length > 0 && (
-          <div>
-            <h3 className="font-semibold">Serviços Selecionados</h3>
-            <ul className="mt-2 list-inside list-disc text-primary">
-              {selectedServices.map((service) => (
-                <li key={service}>{service}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </CardContent>
-      <CardFooter>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive" className="w-full">
-              Cancelar Atendimento
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="bg-card">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Você tem certeza absoluta?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esta ação não pode ser desfeita. Você perderá seu lugar na fila
-                de atendimento.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Continuar na fila</AlertDialogCancel>
-              <AlertDialogAction onClick={onCancel} className="bg-destructive">
-                Sim, cancelar
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </CardFooter>
-    </Card>
+          {selectedServices.length > 0 && (
+            <div>
+              <h3 className="font-semibold">Serviços Selecionados:</h3>
+              <ul className="mt-2 list-inside list-disc text-primary">
+                {selectedServices.map((service) => (
+                  <li key={service}>{service}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+        <CardFooter className="flex flex-col gap-3">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" className="w-full">
+                Cancelar Atendimento
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="bg-card">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Você tem certeza absoluta?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta ação não pode ser desfeita. Você perderá seu lugar na
+                  fila de atendimento.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Continuar na fila</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={onCancel}
+                  className="bg-destructive"
+                >
+                  Sim, cancelar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardFooter>
+      </Card>
+    </form>
   );
 }

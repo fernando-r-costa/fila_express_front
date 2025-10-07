@@ -47,46 +47,49 @@ export function TimeEstimateView({
   console.log(`Horário estimado de atendimento: ${formattedEta}`);
 
   return (
-    <Card className="w-full max-w-sm text-center">
-      <CardHeader>
-        <CardTitle className="text-2xl">Tempo de Espera</CardTitle>
-        <CardDescription>
-          Este é o tempo estimado para o atendimento.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="text-6xl font-bold text-primary">{estimatedTime} min</p>
-        <p className="mt-2 text-lg text-muted-foreground">
-          Horário Previsto:{' '}
-          <span className="font-semibold text-primary">{formattedEta}</span>
-        </p>
-      </CardContent>
-      <CardFooter className="flex flex-col gap-3">
-        <Button
-          onClick={handleConfirmClick}
-          className="w-full"
-          disabled={isLoading}
-        >
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Concordar e Entrar na Fila
-        </Button>
-        <Button
-          onClick={onGoBack}
-          variant="secondary"
-          className="w-full"
-          disabled={isLoading}
-        >
-          Voltar e Modificar Serviços
-        </Button>
-        <Button
-          onClick={onCancel}
-          variant="destructive"
-          className="w-full"
-          disabled={isLoading}
-        >
-          Cancelar Solicitação
-        </Button>
-      </CardFooter>
-    </Card>
+    <form>
+      <Card className="w-full max-w-sm text-center">
+        <CardHeader>
+          <CardTitle className="text-2xl">Tempo de Espera</CardTitle>
+          <CardDescription>
+            Este é o tempo estimado
+            <br /> para o atendimento:
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-5xl font-bold text-primary">{estimatedTime} min</p>
+          <p className="mt-2 text-lg text-muted-foreground">
+            Horário Previsto:{' '}
+            <span className="font-semibold text-primary">{formattedEta}</span>
+          </p>
+        </CardContent>
+        <CardFooter className="flex flex-col gap-3">
+          <Button
+            onClick={handleConfirmClick}
+            className="w-full"
+            disabled={isLoading}
+          >
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Entrar na Fila
+          </Button>
+          <Button
+            onClick={onGoBack}
+            variant="secondary"
+            className="w-full"
+            disabled={isLoading}
+          >
+            Modificar Serviços
+          </Button>
+          <Button
+            onClick={onCancel}
+            variant="destructive"
+            className="w-full"
+            disabled={isLoading}
+          >
+            Cancelar Solicitação
+          </Button>
+        </CardFooter>
+      </Card>
+    </form>
   );
 }

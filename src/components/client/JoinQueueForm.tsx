@@ -52,7 +52,7 @@ export function JoinQueueForm({ onSuccess }: JoinQueueFormProps) {
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-2">
-            <Label htmlFor="name">Nome</Label>
+            <Label htmlFor="name">Nome:</Label>
             <Input
               id="name"
               placeholder="Seu nome completo"
@@ -62,7 +62,7 @@ export function JoinQueueForm({ onSuccess }: JoinQueueFormProps) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="phone">Telefone</Label>
+            <Label htmlFor="phone">Telefone:</Label>
             <Input
               id="phone"
               type="tel"
@@ -73,7 +73,7 @@ export function JoinQueueForm({ onSuccess }: JoinQueueFormProps) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">E-mail:</Label>
             <Input
               id="email"
               type="email"
