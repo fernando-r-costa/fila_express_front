@@ -50,6 +50,7 @@ import {
 import React, { useState } from 'react';
 import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
 import { SettingsSheet } from '@/components/admin/SettingsSheet';
+import Link from 'next/link';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
@@ -390,9 +391,11 @@ export default function DashboardPage() {
                 />
               </SheetContent>
             </Sheet>
-            <Button variant="outline">
-              <History className="mr-2 h-4 w-4" />
-              Histórico
+            <Button asChild variant="outline">
+              <Link href="/admin/relatorios">
+                <History className="mr-2 h-4 w-4" />
+                Relatórios
+              </Link>
             </Button>
             <Sheet
               open={isSettingsSheetOpen}
