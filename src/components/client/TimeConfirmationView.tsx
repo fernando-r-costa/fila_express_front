@@ -69,7 +69,7 @@ export function TimeConfirmationView({
         </CardHeader>
         <CardContent>
           <div>
-            <p className="text-sm font-medium">Tempo Estimado Restante</p>
+            <p className="text-sm font-medium">Tempo Estimado Restante:</p>
             <p className="text-5xl font-bold text-primary">
               {remainingTime} min
             </p>

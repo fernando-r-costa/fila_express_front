@@ -46,6 +46,7 @@ import {
   Clock,
   History,
   Settings,
+  UserX,
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
@@ -138,7 +139,7 @@ function StatusBadge({
 }) {
   if (client.status === 'em_atendimento') return <Badge>Em Atendimento</Badge>;
   if (waitingClients.length > 0 && waitingClients[0].name === client.name)
-    return <Badge variant="secondary">Próximo Atendimento</Badge>;
+    return <Badge variant="secondary">Próximo</Badge>;
   if (client.waitTime <= 30)
     return (
       <Badge variant="outline" className="border-yellow-500 text-yellow-500">
@@ -154,6 +155,7 @@ interface QueueColumnProps {
   onCallNext: () => void;
   onFinish: (clientName: string) => void;
   onRemove: (clientName: string) => void;
+  onNoShow: (clientName: string) => void;
 }
 
 function QueueColumn({
@@ -162,6 +164,7 @@ function QueueColumn({
   onCallNext,
   onFinish,
   onRemove,
+  onNoShow,
 }: QueueColumnProps) {
   const servicingClient = clients.find((c) => c.status === 'em_atendimento');
   const waitingClients = clients
@@ -177,7 +180,8 @@ function QueueColumn({
         <div className="space-y-1">
           <CardTitle>{title}</CardTitle>
           <CardDescription>
-            {clients.length} cliente(s) no total.
+            <span className="text-xl font-bold">{clients.length}</span>{' '}
+            cliente(s) no total.
           </CardDescription>
         </div>
         <Button onClick={onCallNext}>Chamar Próximo</Button>
@@ -233,37 +237,55 @@ function QueueColumn({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
-                      {client.status === 'em_atendimento' && (
+                      {client.status === 'em_atendimento' ? (
+                        <>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => onFinish(client.name)}
+                              >
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Finalizar Atendimento</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="text-destructive"
+                                onClick={() => onNoShow(client.name)}
+                              >
+                                <UserX className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Não Compareceu</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </>
+                      ) : (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="icon"
-                              onClick={() => onFinish(client.name)}
+                              className="text-destructive"
+                              onClick={() => onRemove(client.name)}
                             >
-                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>Finalizar Atendimento</p>
+                            <p>Excluir da Fila</p>
                           </TooltipContent>
                         </Tooltip>
                       )}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-destructive"
-                            onClick={() => onRemove(client.name)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Excluir da Fila</p>
-                        </TooltipContent>
-                      </Tooltip>
                     </div>
                   </TableCell>
                 </TableRow>

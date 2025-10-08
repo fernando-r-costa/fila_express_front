@@ -43,13 +43,11 @@ export default function AdminLoginPage() {
         <Card className="w-full max-w-sm">
           <CardHeader>
             <CardTitle className="text-2xl">Acesso do Salão</CardTitle>
-            <CardDescription>
-              Entre com seu usuário e senha para gerenciar a fila.
-            </CardDescription>
+            <CardDescription>Entre para gerenciar a fila.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="username">Nome de Usuário</Label>
+              <Label htmlFor="username">Nome de Usuário:</Label>
               <Input
                 id="username"
                 type="text"
@@ -61,7 +59,7 @@ export default function AdminLoginPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="password">Senha</Label>
+              <Label htmlFor="password">Senha:</Label>
               <Input
                 id="password"
                 type="password"
