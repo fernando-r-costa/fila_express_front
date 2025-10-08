@@ -10,8 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
 import { AlertTriangle } from 'lucide-react';
 import {
   AlertDialog,
@@ -44,9 +42,6 @@ export function TimeConfirmationView({
   }, [remainingTime, onConfirm]);
 
   const timeInWindow = remainingTime - 20;
-  const windowDuration = 10;
-  const progressPercentage =
-    ((windowDuration - timeInWindow) / windowDuration) * 100;
 
   return (
     <form>
@@ -77,7 +72,10 @@ export function TimeConfirmationView({
         </CardContent>
         <CardFooter className="flex flex-col gap-2">
           <Button className="w-full" onClick={onConfirm}>
-            Confirmar Presença
+            Confirmar Presença{' '}
+            <span className="fonte-bold">
+              ({timeInWindow > 0 ? timeInWindow : 0} min)
+            </span>
           </Button>
 
           <AlertDialog>
@@ -107,15 +105,6 @@ export function TimeConfirmationView({
             </AlertDialogContent>
           </AlertDialog>
         </CardFooter>
-        <div className="px-6 pb-4">
-          <Separator className="mb-4" />
-          <p className="text-xs text-muted-foreground">
-            Confirmando automaticamente em
-            <br />
-            {timeInWindow > 0 ? timeInWindow : 0} minutos...
-          </p>
-          <Progress value={progressPercentage} className="mt-2 h-2" />
-        </div>
       </Card>
     </form>
   );
