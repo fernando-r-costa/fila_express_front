@@ -388,6 +388,8 @@ export default function DashboardPage() {
 
   const handleRemoveFromQueue = handleFinishService;
 
+  const handleNoShow = handleFinishService;
+
   return (
     <TooltipProvider>
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
@@ -445,6 +447,7 @@ export default function DashboardPage() {
             onCallNext={() => handleCallNext('manicure_pedicure')}
             onFinish={handleFinishService}
             onRemove={handleRemoveFromQueue}
+            onNoShow={handleNoShow}
           />
           <QueueColumn
             title="Escova"
@@ -452,6 +455,7 @@ export default function DashboardPage() {
             onCallNext={() => handleCallNext('escova')}
             onFinish={handleFinishService}
             onRemove={handleRemoveFromQueue}
+            onNoShow={handleNoShow}
           />
         </div>
         <AlertDialog
