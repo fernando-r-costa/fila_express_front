@@ -34,7 +34,14 @@ export default function HomePage() {
     });
     setWaitData(wait);
     setServiceData(services);
-    setFormStep('inQueue');
+
+    if (wait.estimatedTime < 30) {
+      console.log('Tempo de espera curto, pulando para a confirmação final.');
+      setFinalTime(wait.estimatedTime);
+      setFormStep('confirmed');
+    } else {
+      setFormStep('inQueue');
+    }
   };
 
   const handleCancel = () => {

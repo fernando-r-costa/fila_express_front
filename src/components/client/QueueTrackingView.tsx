@@ -144,8 +144,9 @@ export function QueueTrackingView({
               <AlertDialogHeader>
                 <AlertDialogTitle>Você tem certeza absoluta?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Esta ação não pode ser desfeita. Você perderá seu lugar na
-                  fila de atendimento.
+                  Esta ação não pode ser desfeita.
+                  <br />
+                  Você perderá seu lugar na fila de atendimento.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

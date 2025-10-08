@@ -13,6 +13,17 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { AlertTriangle } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface TimeConfirmationViewProps {
   remainingTime: number;
@@ -68,9 +79,33 @@ export function TimeConfirmationView({
           <Button className="w-full" onClick={onConfirm}>
             Confirmar Presença
           </Button>
-          <Button variant="ghost" className="w-full" onClick={onCancel}>
-            Cancelar Atendimento
-          </Button>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" className="w-full">
+                Cancelar Atendimento
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="bg-card">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Você tem certeza absoluta?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta ação não pode ser desfeita.
+                  <br />
+                  Você perderá seu lugar na fila de atendimento.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Continuar na fila</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={onCancel}
+                  className="bg-destructive"
+                >
+                  Sim, cancelar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardFooter>
         <div className="px-6 pb-4">
           <Separator className="mb-4" />
