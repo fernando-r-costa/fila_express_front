@@ -48,9 +48,11 @@ import {
   Settings,
   UserX,
 } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
 import { SettingsSheet } from '@/components/admin/SettingsSheet';
+import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
 type ClientData = { name: string; phone: string; email: string };
@@ -299,6 +301,9 @@ function QueueColumn({
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const { isAuthenticated, loading } = useAuth();
+
   const [queueData, setQueueData] = useState(initialMockData);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSettingsSheetOpen, setIsSettingsSheetOpen] = useState(false);
@@ -306,6 +311,20 @@ export default function DashboardPage() {
   const [clientInServiceWarning, setClientInServiceWarning] = useState<
     string | null
   >(null);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push('/admin');
+    }
+  }, [isAuthenticated, loading, router]);
+
+  if (loading) {
+    return <div>Carregando...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   const manicureQueue = queueData.filter(
     (c) => c.queue === 'manicure_pedicure'

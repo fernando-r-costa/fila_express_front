@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -17,6 +18,8 @@ import { Loader2, AlertCircle } from 'lucide-react';
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const { login } = useAuth();
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -27,14 +30,19 @@ export default function AdminLoginPage() {
     setIsLoading(true);
     setError(null);
 
-    setTimeout(() => {
-      if (username === 'admin' && password === 'admin') {
+    try {
+      const success = await login(username, password);
+
+      if (success) {
         router.push('/admin/dashboard');
-      } else {
-        setError('Usuário ou senha inválidos. Tente novamente.');
       }
+    } catch (err: any) {
+      global.console.error('Falha no login:', err);
+      setError(
+        err.response?.data?.error || 'Falha ao conectar com o servidor.'
+      );
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (

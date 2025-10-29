@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -27,6 +28,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { ArrowLeft, Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
 // --- DADOS DE EXEMPLO PARA ATENDIMENTOS FINALIZADOS ---
@@ -80,8 +82,18 @@ const mockCancelledData = [
 ];
 
 export default function ReportsPage() {
+  const router = useRouter();
+  const { isAuthenticated, loading } = useAuth();
+
   const [date, setDate] = useState<Date>(new Date());
   const [showCancellations, setShowCancellations] = useState(false);
+
+  // Proteção da rota
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push('/admin');
+    }
+  }, [isAuthenticated, loading, router]);
 
   // Simulação: "Buscar" novos dados quando a data do filtro muda
   useEffect(() => {
@@ -91,6 +103,14 @@ export default function ReportsPage() {
     // Em uma aplicação real, aqui você faria uma chamada à API com a data selecionada
     // para buscar os 'mockCompletedData' daquele dia.
   }, [date]);
+
+  if (loading) {
+    return <div>Carregando...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
