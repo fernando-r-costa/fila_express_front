@@ -5,11 +5,16 @@ import { JoinQueueForm } from '@/components/client/JoinQueueForm';
 import { ServiceSelectionForm } from '@/components/client/ServiceSelectionForm';
 import { TimeEstimateView } from '@/components/client/TimeEstimateView';
 import { TimeConfirmationSkeleton } from '@/components/client/TimeConfirmationSkeleton';
-import { calculateMockWaitTime } from '@/lib/utils';
+import api from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
-type WaitData = { estimatedTime: number; position: number };
+type WaitData = {
+  estimatedTime: number;
+  position: number;
+  appointmentId?: number;
+};
 
 interface ClientSignUpFlowProps {
   onFlowComplete: (
@@ -18,37 +23,111 @@ interface ClientSignUpFlowProps {
     wait: WaitData
   ) => void;
   onCancel: () => void;
+  salonId?: number; // necessário para integração com a API pública
 }
 
 export function ClientSignUpFlow({
   onFlowComplete,
   onCancel,
+  salonId,
 }: ClientSignUpFlowProps) {
   const [formStep, setFormStep] = useState('identification');
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [serviceData, setServiceData] = useState<ServiceData | null>(null);
   const [isCalculatingTime, setIsCalculatingTime] = useState(false);
   const [waitData, setWaitData] = useState<WaitData | null>(null);
+  const { toast } = useToast();
+
+  const mapServicesToBackend = (services: ServiceData): string[] => {
+    const mapped: string[] = [];
+    if (services.manicure) mapped.push('manicure');
+    if (services.pedicure) mapped.push('pedicure');
+    if (services.escova) mapped.push('brush');
+    return mapped;
+  };
 
   const handleIdentificationSuccess = (data: ClientData) => {
     setClientData(data);
     setFormStep('serviceSelection');
   };
 
-  const handleServiceSelectionSuccess = (services: ServiceData) => {
-    setIsCalculatingTime(true);
+  const handleServiceSelectionSuccess = async (services: ServiceData) => {
     setServiceData(services);
-    const calculatedData = calculateMockWaitTime(services);
-    setWaitData(calculatedData);
-    setTimeout(() => {
-      setIsCalculatingTime(false);
+    if (!salonId) {
+      toast({
+        title: 'Configuração ausente',
+        description:
+          'Não foi possível identificar o salão. Informe o salonId na URL (?salonId=) ou configure NEXT_PUBLIC_SALON_ID.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsCalculatingTime(true);
+      const servicesRequested = mapServicesToBackend(services);
+      const { data } = await api.post('/estimate-time', {
+        salonId,
+        servicesRequested,
+      });
+      setWaitData({
+        estimatedTime: data.estimatedTime,
+        position: data.position,
+      });
       setFormStep('confirmation');
-    }, 2000);
+    } catch (error) {
+      console.error('Erro ao estimar tempo:', error);
+      const errorMessage =
+        (error as any).response?.data?.message ||
+        'Não foi possível estimar o tempo agora. Tente novamente.';
+      toast({
+        title: 'Falha na estimativa',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCalculatingTime(false);
+    }
   };
 
-  const handleConfirmation = () => {
+  const handleConfirmation = async () => {
     if (clientData && serviceData && waitData) {
-      onFlowComplete(clientData, serviceData, waitData);
+      if (!salonId) {
+        toast({
+          title: 'Configuração ausente',
+          description:
+            'Não foi possível identificar o salão. Informe o salonId na URL (?salonId=) ou configure NEXT_PUBLIC_SALON_ID.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      try {
+        const servicesRequested = mapServicesToBackend(serviceData);
+        const payload = {
+          salonId,
+          clientName: clientData.name,
+          clientPhone: clientData.phone,
+          clientEmail: clientData.email,
+          servicesRequested,
+        };
+        const { data: newAppointment } = await api.post('/join', payload);
+        const nextWait: WaitData = {
+          ...waitData,
+          appointmentId: newAppointment.appointmentId,
+        };
+        onFlowComplete(clientData, serviceData, nextWait);
+      } catch (error) {
+        console.error('Erro ao entrar na fila:', error);
+        const errorMessage =
+          (error as any).response?.data?.message ||
+          'Não foi possível concluir sua entrada na fila. Tente novamente.';
+        toast({
+          title: 'Falha ao entrar na fila',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
     }
   };
 

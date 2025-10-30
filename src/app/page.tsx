@@ -2,7 +2,7 @@
 
 import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
 import { QueueTrackingView } from '@/components/client/QueueTrackingView';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Card,
   CardHeader,
@@ -11,34 +11,42 @@ import {
   CardContent,
 } from '@/components/ui/card';
 import { CheckCircle } from 'lucide-react';
+import api from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
-type WaitData = { estimatedTime: number; position: number };
+type WaitData = {
+  estimatedTime: number;
+  position: number;
+  appointmentId?: number;
+};
 
 export default function HomePage() {
   const [formStep, setFormStep] = useState('signup');
   const [waitData, setWaitData] = useState<WaitData | null>(null);
   const [serviceData, setServiceData] = useState<ServiceData | null>(null);
   const [finalTime, setFinalTime] = useState<number | null>(null);
+  const [clientData, setClientData] = useState<ClientData | null>(null);
+  const { toast } = useToast();
+
+  const salonId = useMemo(() => {
+    const envVar = process.env.NEXT_PUBLIC_SALON_ID;
+    return envVar ? Number(envVar) : undefined;
+  }, []);
 
   const handleFlowComplete = (
     client: ClientData,
     services: ServiceData,
     wait: WaitData
   ) => {
-    console.log('CLIENTE ENTROU NA FILA PELA HOME:', {
-      client,
-      services,
-      wait,
-    });
+    setClientData(client);
     setWaitData(wait);
     setServiceData(services);
 
     if (wait.estimatedTime < 30) {
-      console.log('Tempo de espera curto, pulando para a confirmação final.');
-      setFinalTime(wait.estimatedTime);
-      setFormStep('confirmed');
+      // Confirmação imediata para janelas curtas
+      handleFinalConfirmation(wait.estimatedTime);
     } else {
       setFormStep('inQueue');
     }
@@ -49,10 +57,32 @@ export default function HomePage() {
     setFormStep('signup');
   };
 
-  const handleFinalConfirmation = (currentTime: number) => {
-    console.log('O cliente confirmou sua presença.');
+  const handleFinalConfirmation = async (currentTime: number) => {
     setFinalTime(currentTime);
-    setFormStep('confirmed');
+    try {
+      if (!waitData?.appointmentId || !clientData?.phone) {
+        throw new Error('Dados insuficientes para confirmar.');
+      }
+      await api.patch(`/appointments/${waitData.appointmentId}/confirm`, {
+        clientPhone: clientData.phone,
+      });
+      toast({
+        title: 'Presença confirmada!',
+        description: 'Obrigado! Pode se dirigir ao salão.',
+      });
+    } catch (error) {
+      console.error('Falha ao confirmar presença:', error);
+      const errorMessage =
+        (error as any).response?.data?.message ||
+        'Não foi possível confirmar sua presença agora. Tente novamente no salão.';
+      toast({
+        title: 'Confirmação não concluída',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setFormStep('confirmed');
+    }
   };
 
   const renderContent = () => {
@@ -118,6 +148,7 @@ export default function HomePage() {
           <ClientSignUpFlow
             onFlowComplete={handleFlowComplete}
             onCancel={handleCancel}
+            salonId={salonId}
           />
         );
     }
