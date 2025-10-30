@@ -3,6 +3,7 @@ import localFont from 'next/font/local';
 import './globals.css';
 import { Suspense } from 'react';
 import Header from '@/components/shared/Header';
+import { Toaster } from '@/components/ui/toaster';
 
 const sqindra = localFont({
   src: '../assets/fonts/sqindra.ttf',
@@ -32,6 +33,7 @@ export default function RootLayout({
           }
         >
           <main className="flex-grow overflow-y-auto">{children}</main>
+          <Toaster />
         </Suspense>
       </body>
     </html>

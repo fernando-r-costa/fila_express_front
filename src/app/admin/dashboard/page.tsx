@@ -48,88 +48,28 @@ import {
   Settings,
   UserX,
 } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
 import { SettingsSheet } from '@/components/admin/SettingsSheet';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
+import api from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
 type WaitData = { estimatedTime: number; position: number };
 
-// Dados iniciais da fila
-const initialMockData = [
-  // --- Fila de Manicure & Pedicure (5 Clientes) ---
-  {
-    position: 0,
-    name: 'Ana Silva',
-    services: ['Manicure'],
-    queue: 'manicure_pedicure',
-    status: 'em_atendimento',
-    waitTime: 0,
-  },
-  {
-    position: 1,
-    name: 'Bruna Costa',
-    services: ['Manicure', 'Pedicure'],
-    queue: 'manicure_pedicure',
-    status: 'aguardando',
-    waitTime: 35,
-  },
-  {
-    position: 2,
-    name: 'Mariana Alves',
-    services: ['Pedicure'],
-    queue: 'manicure_pedicure',
-    status: 'aguardando',
-    waitTime: 20,
-  },
-  {
-    position: 3,
-    name: 'Felipa Souza',
-    services: ['Manicure'],
-    queue: 'manicure_pedicure',
-    status: 'aguardando',
-    waitTime: 60,
-  },
-  {
-    position: 4,
-    name: 'Carla Dias',
-    services: ['Manicure'],
-    queue: 'manicure_pedicure',
-    status: 'aguardando',
-    waitTime: 85,
-  },
-  // --- Fila de Escova (3 Clientes) ---
-  {
-    position: 0,
-    name: 'Ricarda Gomes',
-    services: ['Escova'],
-    queue: 'escova',
-    status: 'em_atendimento',
-    waitTime: 0,
-  },
-  {
-    position: 1,
-    name: 'Julia Lima',
-    services: ['Escova'],
-    queue: 'escova',
-    status: 'aguardando',
-    waitTime: 45,
-  },
-  {
-    position: 2,
-    name: 'Luiza Pereira',
-    services: ['Escova'],
-    queue: 'escova',
-    status: 'aguardando',
-    waitTime: 15,
-  },
-];
-
-type Client = (typeof initialMockData)[0];
+type Client = {
+  id: string;
+  position: number;
+  name: string;
+  services: string[];
+  queue: QueueType;
+  status: 'em_atendimento' | 'aguardando';
+  waitTime: number;
+};
 type QueueType = 'manicure_pedicure' | 'escova';
 
 function StatusBadge({
@@ -155,9 +95,10 @@ interface QueueColumnProps {
   title: string;
   clients: Client[];
   onCallNext: () => void;
-  onFinish: (clientName: string) => void;
-  onRemove: (clientName: string) => void;
-  onNoShow: (clientName: string) => void;
+  onFinish: (clientId: string) => void;
+  onRemove: (clientId: string) => void;
+  onNoShow: (clientId: string) => void;
+  isLoadingNext?: boolean;
 }
 
 function QueueColumn({
@@ -167,6 +108,7 @@ function QueueColumn({
   onFinish,
   onRemove,
   onNoShow,
+  isLoadingNext = false,
 }: QueueColumnProps) {
   const servicingClient = clients.find((c) => c.status === 'em_atendimento');
   const waitingClients = clients
@@ -186,7 +128,9 @@ function QueueColumn({
             cliente(s) no total.
           </CardDescription>
         </div>
-        <Button onClick={onCallNext}>Chamar Próximo</Button>
+        <Button onClick={onCallNext} disabled={isLoadingNext}>
+          {isLoadingNext ? 'Chamando...' : 'Chamar Próximo'}{' '}
+        </Button>
       </CardHeader>
       <CardContent>
         <Table>
@@ -213,7 +157,7 @@ function QueueColumn({
                 });
               }
               return (
-                <TableRow key={client.name}>
+                <TableRow key={client.id}>
                   <TableCell className="font-bold">
                     {client.status === 'em_atendimento' ? '-' : client.position}
                   </TableCell>
@@ -246,7 +190,7 @@ function QueueColumn({
                               <Button
                                 variant="outline"
                                 size="icon"
-                                onClick={() => onFinish(client.name)}
+                                onClick={() => onFinish(client.id)}
                               >
                                 <CheckCircle className="h-4 w-4 text-green-500" />
                               </Button>
@@ -261,7 +205,7 @@ function QueueColumn({
                                 variant="outline"
                                 size="icon"
                                 className="text-destructive"
-                                onClick={() => onNoShow(client.name)}
+                                onClick={() => onNoShow(client.id)}
                               >
                                 <UserX className="h-4 w-4" />
                               </Button>
@@ -278,7 +222,7 @@ function QueueColumn({
                               variant="ghost"
                               size="icon"
                               className="text-destructive"
-                              onClick={() => onRemove(client.name)}
+                              onClick={() => onRemove(client.id)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -302,23 +246,52 @@ function QueueColumn({
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading: authLoading, salonId } = useAuth();
+  const { toast } = useToast();
 
-  const [queueData, setQueueData] = useState(initialMockData);
+  const [queueData, setQueueData] = useState<Client[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSettingsSheetOpen, setIsSettingsSheetOpen] = useState(false);
   const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
   const [clientInServiceWarning, setClientInServiceWarning] = useState<
     string | null
   >(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCallingNext, setIsCallingNext] = useState<QueueType | null>(null);
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
+    if (isAuthenticated && salonId) {
+      const fetchQueueData = async () => {
+        setIsDataLoading(true);
+        try {
+          const response = await api.get(`/queue/${salonId}`);
+          setQueueData(response.data);
+        } catch (error) {
+          console.error('Falha ao buscar dados da fila:', error);
+          toast({
+            title: 'Erro ao carregar fila',
+            description:
+              'Não foi possível buscar os dados da fila. Tente recarregar a página.',
+            variant: 'destructive',
+          });
+        } finally {
+          setIsDataLoading(false);
+        }
+      };
+
+      fetchQueueData();
+    }
+  }, [isAuthenticated, salonId, toast]);
+
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
       router.push('/admin');
     }
-  }, [isAuthenticated, loading, router]);
+  }, [isAuthenticated, authLoading, router]);
 
-  if (loading) {
+  if (authLoading || (isAuthenticated && isDataLoading)) {
     return <div>Carregando...</div>;
   }
 
@@ -331,42 +304,98 @@ export default function DashboardPage() {
   );
   const escovaQueue = queueData.filter((c) => c.queue === 'escova');
 
-  const handleManualAddComplete = (
+  const handleManualAddComplete = async (
     client: ClientData,
     services: ServiceData,
     wait: WaitData
   ) => {
-    const servicesList = (
-      Object.keys(services) as Array<keyof ServiceData>
-    ).filter((k) => services[k] === true);
-    const targetQueue = servicesList.includes('escova')
-      ? 'escova'
-      : 'manicure_pedicure';
+    if (!salonId) {
+      toast({
+        title: 'Erro de autenticação',
+        description: 'ID do salão não encontrado. Tente fazer login novamente.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
-    const queueToAdd = queueData.filter(
-      (c) => c.queue === targetQueue && c.status === 'aguardando'
-    );
-    const newPosition = Math.max(0, ...queueToAdd.map((c) => c.position)) + 1;
+    setIsSubmitting(true);
+    try {
+      const servicesList = (
+        Object.keys(services) as Array<keyof ServiceData>
+      ).filter((k) => services[k] === true);
 
-    const newClient = {
-      position: newPosition,
-      name: client.name,
-      services: servicesList,
-      queue: targetQueue,
-      status: 'aguardando',
-      waitTime: wait.estimatedTime,
-    };
-    setQueueData((prevData) => [...prevData, newClient]);
-    setIsSheetOpen(false);
+      const payload = {
+        salonId: salonId,
+        clientName: client.name,
+        clientPhone: client.phone,
+        clientEmail: client.email,
+        servicesRequested: servicesList,
+      };
+
+      const response = await api.post('/fila-express/join', payload);
+
+      const newClient = response.data;
+
+      setQueueData((prevData) => [...prevData, newClient]);
+      setIsSheetOpen(false);
+      toast({
+        title: 'Cliente Adicionado!',
+        description: `${newClient.name} entrou na fila.`,
+      });
+    } catch (error) {
+      console.error('Falha ao adicionar cliente:', error);
+      toast({
+        title: 'Erro ao adicionar cliente',
+        description:
+          'Não foi possível adicionar o cliente. Tente novamente mais tarde.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSettingsSave = (settings: any) => {
-    console.log('Configurações salvas no painel principal!', settings);
-    // Aqui você poderia, por exemplo, atualizar o estado global da aplicação
-    setIsSettingsSheetOpen(false);
+  const handleSettingsSave = async (settings: any) => {
+    if (!salonId) {
+      toast({
+        title: 'Erro de autenticação',
+        description: 'ID do salão não encontrado.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const response = await api.put('/config', settings);
+
+      toast({
+        title: 'Configurações Salvas!',
+        description: 'As configurações do salão foram atualizadas com sucesso.',
+      });
+      setIsSettingsSheetOpen(false);
+    } catch (error) {
+      console.error('Falha ao salvar configurações:', error);
+      const errorMessage =
+        (error as any).response?.data?.message ||
+        'Não foi possível salvar as configurações. Tente novamente.';
+      toast({
+        title: 'Erro ao salvar configurações',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleCallNext = (queueType: QueueType) => {
+  const handleCallNext = async (queueType: QueueType) => {
+    if (!salonId) {
+      toast({
+        title: 'Erro de autenticação',
+        description: 'ID do salão não encontrado.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const servicingClient = queueData.find(
       (c) => c.queue === queueType && c.status === 'em_atendimento'
     );
@@ -375,39 +404,167 @@ export default function DashboardPage() {
       setIsWarningModalOpen(true);
       return;
     }
-    const waitingClients = queueData
-      .filter((c) => c.queue === queueType && c.status === 'aguardando')
-      .sort((a, b) => a.position - b.position);
-    if (waitingClients.length === 0) return;
-    const nextClient = waitingClients[0];
-    const updatedQueue = queueData.map((client) =>
-      client.name === nextClient.name
-        ? { ...client, status: 'em_atendimento', position: 0 }
-        : client
+
+    const waitingClients = queueData.filter(
+      (c) => c.queue === queueType && c.status === 'aguardando'
     );
-    setQueueData(updatedQueue);
+    if (waitingClients.length === 0) {
+      toast({
+        title: 'Fila Vazia',
+        description: 'Não há clientes aguardando para serem chamados.',
+      });
+      return;
+    }
+
+    setIsCallingNext(queueType);
+    try {
+      const response = await api.post('call-next', {
+        salonId,
+        queueType,
+      });
+
+      const updatedClient = response.data;
+
+      setQueueData((prevData) =>
+        prevData.map((client) =>
+          client.id === updatedClient.id ? updatedClient : client
+        )
+      );
+
+      toast({
+        title: 'Cliente Chamado!',
+        description: `${updatedClient.name} está em atendimento.`,
+      });
+    } catch (error) {
+      console.error('Falha ao chamar próximo cliente:', error);
+      const errorMessage =
+        (error as any).response?.data?.message ||
+        'Não foi possível chamar o cliente. Tente novamente.';
+      toast({
+        title: 'Erro ao chamar cliente',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCallingNext(null);
+    }
   };
 
-  const handleFinishService = (clientName: string) => {
-    const finishedClient = queueData.find((c) => c.name === clientName);
-    if (!finishedClient) return;
+  const handleFinishService = async (clientId: string) => {
+    if (!salonId) {
+      toast({
+        title: 'Erro de autenticação',
+        description: 'ID do salão não encontrado.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
-    let updatedQueue = queueData.filter((client) => client.name !== clientName);
-    updatedQueue = updatedQueue.map((client) => {
-      if (
-        client.queue === finishedClient.queue &&
-        client.position > finishedClient.position
-      ) {
-        return { ...client, position: client.position - 1 };
-      }
-      return client;
-    });
-    setQueueData(updatedQueue);
+    try {
+      const response = await api.patch(`/appointments/${clientId}/finish`);
+
+      const updatedClient = response.data;
+
+      // Remove o cliente da fila após finalizar
+      setQueueData((prevData) =>
+        prevData.filter((client) => client.id !== clientId)
+      );
+
+      toast({
+        title: 'Atendimento Finalizado!',
+        description: `O atendimento foi concluído com sucesso.`,
+      });
+    } catch (error) {
+      console.error('Falha ao finalizar atendimento:', error);
+      const errorMessage =
+        (error as any).response?.data?.message ||
+        'Não foi possível finalizar o atendimento. Tente novamente.';
+      toast({
+        title: 'Erro ao finalizar atendimento',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleRemoveFromQueue = handleFinishService;
+  const handleRemoveFromQueue = async (clientId: string) => {
+    if (!salonId) {
+      toast({
+        title: 'Erro de autenticação',
+        description: 'ID do salão não encontrado.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
-  const handleNoShow = handleFinishService;
+    try {
+      const response = await api.patch(`/appointments/${clientId}/remove`, {
+        reason: 'removed_by_admin',
+      });
+
+      const updatedClient = response.data;
+
+      // Remove o cliente da fila
+      setQueueData((prevData) =>
+        prevData.filter((client) => client.id !== clientId)
+      );
+
+      toast({
+        title: 'Cliente Removido!',
+        description: `O cliente foi removido da fila com sucesso.`,
+      });
+    } catch (error) {
+      console.error('Falha ao remover cliente:', error);
+      const errorMessage =
+        (error as any).response?.data?.message ||
+        'Não foi possível remover o cliente. Tente novamente.';
+      toast({
+        title: 'Erro ao remover cliente',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleNoShow = async (clientId: string) => {
+    if (!salonId) {
+      toast({
+        title: 'Erro de autenticação',
+        description: 'ID do salão não encontrado.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const response = await api.patch(`/appointments/${clientId}/remove`, {
+        reason: 'no_show',
+      });
+
+      const updatedClient = response.data;
+
+      // Remove o cliente da fila
+      setQueueData((prevData) =>
+        prevData.filter((client) => client.id !== clientId)
+      );
+
+      toast({
+        title: 'Cliente Marcado como Não Compareceu',
+        description: `O cliente foi marcado como não compareceu e removido da fila.`,
+        variant: 'destructive',
+      });
+    } catch (error) {
+      console.error('Falha ao marcar como não compareceu:', error);
+      const errorMessage =
+        (error as any).response?.data?.message ||
+        'Não foi possível marcar o cliente como não compareceu. Tente novamente.';
+      toast({
+        title: 'Erro ao marcar não comparecimento',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
     <TooltipProvider>
@@ -467,6 +624,7 @@ export default function DashboardPage() {
             onFinish={handleFinishService}
             onRemove={handleRemoveFromQueue}
             onNoShow={handleNoShow}
+            isLoadingNext={isCallingNext === 'manicure_pedicure'}
           />
           <QueueColumn
             title="Escova"
@@ -475,6 +633,7 @@ export default function DashboardPage() {
             onFinish={handleFinishService}
             onRemove={handleRemoveFromQueue}
             onNoShow={handleNoShow}
+            isLoadingNext={isCallingNext === 'escova'}
           />
         </div>
         <AlertDialog

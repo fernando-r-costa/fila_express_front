@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     adminUser: string,
     adminPassword: string
   ): Promise<boolean> => {
-    const response = await api.post('/fila-express/salon/login', {
+    const response = await api.post('salon/login', {
       adminUser,
       adminPassword,
     });
