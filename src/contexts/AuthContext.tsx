@@ -48,9 +48,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       adminPassword,
     });
 
-    const { token: newToken, salonId: newSalonId } = response.data;
+    const { token: newToken } = response.data;
 
-    if (newToken && newSalonId) {
+    if (newToken) {
+      const payload = JSON.parse(atob(newToken.split('.')[1]));
+      const newSalonId = payload.salonId;
+
       localStorage.setItem('authTokenSalao', newToken);
       localStorage.setItem('salonId', String(newSalonId));
       setToken(newToken);
