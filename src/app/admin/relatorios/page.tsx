@@ -29,82 +29,125 @@ import { ArrowLeft, Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import api from '@/lib/api';
 import Link from 'next/link';
 
-// --- DADOS DE EXEMPLO PARA ATENDIMENTOS FINALIZADOS ---
-const mockCompletedData = [
-  {
-    name: 'Ana Silva',
-    phone: '(34) 99999-1111',
-    services: ['Manicure'],
-    entryTime: '09:05',
-    startTime: '09:15',
-    finishTime: '09:45',
-  },
-  {
-    name: 'Ricarda Gomes',
-    phone: '(34) 99999-2222',
-    services: ['Escova'],
-    entryTime: '09:10',
-    startTime: '09:20',
-    finishTime: '10:05',
-  },
-  {
-    name: 'Bruno Costa',
-    phone: '(34) 98888-1111',
-    services: ['Manicure', 'Pedicure'],
-    entryTime: '09:15',
-    startTime: '09:45',
-    finishTime: '10:30',
-  },
-];
+type CompletedAppointment = {
+  appointmentId: number;
+  clientName: string;
+  clientPhone: string;
+  servicesRequested: string[];
+  createdAt: string;
+  startTime: string;
+  finishTime: string;
+};
 
-// --- DADOS DE EXEMPLO PARA CANCELAMENTOS (GERAL) ---
-const mockCancelledData = [
-  {
-    name: 'Mariana Alves',
-    email: 'mariana.alves@email.com',
-    services: ['Pedicure'],
-    status: 'Cancelado na espera',
-  },
-  {
-    name: 'Julia Lima',
-    email: 'julia.lima@email.com',
-    services: ['Escova'],
-    status: 'Não compareceu',
-  },
-  {
-    name: 'Mariana Alves',
-    email: 'mariana.alves@email.com',
-    services: ['Manicure'],
-    status: 'Cancelado na espera',
-  },
-];
+type CancelledAppointment = {
+  appointmentId: number;
+  clientName: string;
+  clientEmail: string;
+  servicesRequested: string[];
+  status: 'cancelled' | 'no_show';
+  finishTime: string;
+};
 
 export default function ReportsPage() {
   const router = useRouter();
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading: authLoading, salonId } = useAuth();
+  const { toast } = useToast();
 
   const [date, setDate] = useState<Date>(new Date());
   const [showCancellations, setShowCancellations] = useState(false);
+  const [completedData, setCompletedData] = useState<CompletedAppointment[]>(
+    []
+  );
+  const [cancelledData, setCancelledData] = useState<CancelledAppointment[]>(
+    []
+  );
+  const [isLoading, setIsLoading] = useState(false);
+
+  const mapServicesFromBackend = (services: string[]) => {
+    return services.map((s) => {
+      if (s === 'brush') return 'Escova';
+      if (s === 'manicure') return 'Manicure';
+      if (s === 'pedicure') return 'Pedicure';
+      return s;
+    });
+  };
+
+  const formatTime = (dateString: string) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  // Buscar atendimentos finalizados
+  useEffect(() => {
+    const fetchCompletedAppointments = async () => {
+      if (!salonId) return;
+      setIsLoading(true);
+      try {
+        const dateParam = format(date, 'yyyy-MM-dd');
+        const { data } = await api.get(
+          `/history/completed/${salonId}?date=${dateParam}`
+        );
+        setCompletedData(data);
+      } catch (error) {
+        console.error('Erro ao buscar atendimentos finalizados:', error);
+        toast({
+          title: 'Erro ao carregar histórico',
+          description:
+            'Não foi possível buscar os atendimentos finalizados. Tente novamente.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (!showCancellations) {
+      fetchCompletedAppointments();
+    }
+  }, [date, salonId, showCancellations, toast]);
+
+  // Buscar cancelamentos
+  useEffect(() => {
+    const fetchCancelledAppointments = async () => {
+      if (!salonId) return;
+      setIsLoading(true);
+      try {
+        const { data } = await api.get(`/history/cancelled/${salonId}`);
+        setCancelledData(data);
+      } catch (error) {
+        console.error('Erro ao buscar cancelamentos:', error);
+        toast({
+          title: 'Erro ao carregar cancelamentos',
+          description:
+            'Não foi possível buscar o histórico de cancelamentos. Tente novamente.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (showCancellations) {
+      fetchCancelledAppointments();
+    }
+  }, [showCancellations, salonId, toast]);
 
   // Proteção da rota
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
+    if (!authLoading && !isAuthenticated) {
       router.push('/admin');
     }
-  }, [isAuthenticated, loading, router]);
+  }, [isAuthenticated, authLoading, router]);
 
-  // Simulação: "Buscar" novos dados quando a data do filtro muda
-  useEffect(() => {
-    console.log(
-      `Simulando busca de atendimentos para o dia: ${format(date, 'PPP', { locale: ptBR })}`
-    );
-    // Em uma aplicação real, aqui você faria uma chamada à API com a data selecionada
-    // para buscar os 'mockCompletedData' daquele dia.
-  }, [date]);
-
-  if (loading) {
+  if (authLoading || isLoading) {
     return <div>Carregando...</div>;
   }
 
@@ -177,28 +220,42 @@ export default function ReportsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mockCancelledData.map((item, index) => (
-                  <TableRow key={`${item.name}-${index}`}>
-                    <TableCell>
-                      <div className="font-medium">{item.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {item.email}
-                      </div>
-                    </TableCell>
-                    <TableCell>{item.services.join(', ')}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          item.status === 'Não compareceu'
-                            ? 'destructive'
-                            : 'secondary'
-                        }
-                      >
-                        {item.status}
-                      </Badge>
+                {cancelledData.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center">
+                      Nenhum cancelamento registrado.
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  cancelledData.map((item, index) => (
+                    <TableRow key={`${item.appointmentId}-${index}`}>
+                      <TableCell>
+                        <div className="font-medium">{item.clientName}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {item.clientEmail}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {mapServicesFromBackend(item.servicesRequested).join(
+                          ', '
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            item.status === 'no_show'
+                              ? 'destructive'
+                              : 'secondary'
+                          }
+                        >
+                          {item.status === 'no_show'
+                            ? 'Não compareceu'
+                            : 'Cancelado'}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -227,20 +284,32 @@ export default function ReportsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mockCompletedData.map((item) => (
-                  <TableRow key={item.name}>
-                    <TableCell>
-                      <div className="font-medium">{item.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {item.phone}
-                      </div>
+                {completedData.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center">
+                      Nenhum atendimento finalizado nesta data.
                     </TableCell>
-                    <TableCell>{item.services.join(', ')}</TableCell>
-                    <TableCell>{item.entryTime}</TableCell>
-                    <TableCell>{item.startTime}</TableCell>
-                    <TableCell>{item.finishTime}</TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  completedData.map((item) => (
+                    <TableRow key={item.appointmentId}>
+                      <TableCell>
+                        <div className="font-medium">{item.clientName}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {item.clientPhone}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {mapServicesFromBackend(item.servicesRequested).join(
+                          ', '
+                        )}
+                      </TableCell>
+                      <TableCell>{formatTime(item.createdAt)}</TableCell>
+                      <TableCell>{formatTime(item.startTime)}</TableCell>
+                      <TableCell>{formatTime(item.finishTime)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>
