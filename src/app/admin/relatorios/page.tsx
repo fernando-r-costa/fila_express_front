@@ -85,7 +85,6 @@ export default function ReportsPage() {
     });
   };
 
-  // Buscar atendimentos finalizados
   useEffect(() => {
     const fetchCompletedAppointments = async () => {
       if (!salonId) return;
@@ -114,7 +113,6 @@ export default function ReportsPage() {
     }
   }, [date, salonId, showCancellations, toast]);
 
-  // Buscar cancelamentos
   useEffect(() => {
     const fetchCancelledAppointments = async () => {
       if (!salonId) return;
@@ -140,7 +138,6 @@ export default function ReportsPage() {
     }
   }, [showCancellations, salonId, toast]);
 
-  // Proteção da rota
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       router.push('/admin');

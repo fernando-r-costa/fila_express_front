@@ -332,7 +332,7 @@ export default function DashboardPage() {
         servicesRequested: servicesList,
       };
 
-      const response = await api.post('/fila-express/join', payload);
+      const response = await api.post('/join', payload);
 
       const newClient = response.data;
 
@@ -465,7 +465,6 @@ export default function DashboardPage() {
 
       const updatedClient = response.data;
 
-      // Remove o cliente da fila após finalizar
       setQueueData((prevData) =>
         prevData.filter((client) => client.id !== clientId)
       );
@@ -504,7 +503,6 @@ export default function DashboardPage() {
 
       const updatedClient = response.data;
 
-      // Remove o cliente da fila
       setQueueData((prevData) =>
         prevData.filter((client) => client.id !== clientId)
       );
@@ -543,7 +541,6 @@ export default function DashboardPage() {
 
       const updatedClient = response.data;
 
-      // Remove o cliente da fila
       setQueueData((prevData) =>
         prevData.filter((client) => client.id !== clientId)
       );

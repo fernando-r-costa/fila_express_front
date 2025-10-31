@@ -90,7 +90,6 @@ export default function QueuePage() {
     };
     fetchData();
 
-    // Polling a cada 60 segundos
     const interval = setInterval(() => {
       if (!isConfirmed) {
         fetchData();

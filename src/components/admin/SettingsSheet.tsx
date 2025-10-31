@@ -9,37 +9,25 @@ import { Loader2 } from 'lucide-react';
 
 interface SettingsSheetProps {
   onSave: (settings: any) => void;
-  // No futuro, você passaria os valores atuais:
-  // currentSettings: { ... };
 }
 
 export function SettingsSheet({ onSave }: SettingsSheetProps) {
   const [isLoading, setIsLoading] = useState(false);
 
-  // No futuro, você inicializaria este estado com os valores atuais
   const [manicureAttendants, setManicureAttendants] = useState(2);
   const [escovaAttendants, setEscovaAttendants] = useState(1);
   const [openingTime, setOpeningTime] = useState('09:00');
   const [closingTime, setClosingTime] = useState('18:00');
 
-  const handleSave = (event: React.FormEvent) => {
-    event.preventDefault();
-    setIsLoading(true);
-
+  const handleSave = () => {
     const newSettings = {
-      manicureAttendants,
-      escovaAttendants,
       openingTime,
       closingTime,
+      numberOfManicureStations: manicureAttendants,
+      numberOfBrushStations: escovaAttendants,
     };
 
-    console.log('Salvando novas configurações:', newSettings);
-
-    // Simula a chamada para a API
-    setTimeout(() => {
-      onSave(newSettings);
-      setIsLoading(false);
-    }, 1500);
+    onSave(newSettings);
   };
 
   return (

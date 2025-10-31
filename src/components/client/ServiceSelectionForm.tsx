@@ -53,16 +53,10 @@ export function ServiceSelectionForm({
     event.preventDefault();
 
     if (!isAnyServiceSelected) {
-      console.error('Nenhum serviço selecionado.');
       return;
     }
 
     setIsLoading(true);
-
-    console.log('Enviando serviços selecionados:', {
-      client: clientData,
-      services: selectedServices,
-    });
 
     setTimeout(() => {
       setIsLoading(false);

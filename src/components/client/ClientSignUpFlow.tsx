@@ -76,7 +76,6 @@ export function ClientSignUpFlow({
       });
       setFormStep('confirmation');
     } catch (error) {
-      console.error('Erro ao estimar tempo:', error);
       const errorMessage =
         (error as any).response?.data?.message ||
         'Não foi possível estimar o tempo agora. Tente novamente.';
@@ -118,7 +117,6 @@ export function ClientSignUpFlow({
         };
         onFlowComplete(clientData, serviceData, nextWait);
       } catch (error) {
-        console.error('Erro ao entrar na fila:', error);
         const errorMessage =
           (error as any).response?.data?.message ||
           'Não foi possível concluir sua entrada na fila. Tente novamente.';
@@ -136,7 +134,6 @@ export function ClientSignUpFlow({
   };
 
   const handleResetFlow = () => {
-    console.log('O cliente cancelou a inscrição.');
     setFormStep('identification');
     setClientData(null);
     setServiceData(null);

@@ -66,8 +66,6 @@ export function QueueTrackingView({
   }, [initialTime]);
 
   useEffect(() => {
-    console.log(`Tempo restante: ${time} min, Posição atual: ${position}`);
-
     const ONE_MINUTE = 1000;
 
     if (time > 0) {

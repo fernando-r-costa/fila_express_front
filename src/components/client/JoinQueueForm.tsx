@@ -35,7 +35,6 @@ export function JoinQueueForm({ onSuccess }: JoinQueueFormProps) {
     setIsLoading(true);
 
     const data = { name, phone, email };
-    console.log('Enviando dados do cliente:', data);
 
     setTimeout(() => {
       setIsLoading(false);

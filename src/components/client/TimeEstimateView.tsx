@@ -29,7 +29,6 @@ export function TimeEstimateView({
 
   const handleConfirmClick = () => {
     setIsLoading(true);
-    console.log('Confirmando entrada na fila...');
 
     setTimeout(() => {
       setIsLoading(false);
@@ -38,13 +37,11 @@ export function TimeEstimateView({
   };
 
   const now = new Date();
-  const estimatedServiceTime = new Date(now.getTime() + estimatedTime * 60000); // 60000ms = 1 minuto
+  const estimatedServiceTime = new Date(now.getTime() + estimatedTime * 60000);
   const formattedEta = estimatedServiceTime.toLocaleTimeString('pt-BR', {
     hour: '2-digit',
     minute: '2-digit',
   });
-
-  console.log(`Horário estimado de atendimento: ${formattedEta}`);
 
   return (
     <form>

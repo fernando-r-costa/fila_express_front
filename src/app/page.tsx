@@ -44,8 +44,7 @@ export default function HomePage() {
     setWaitData(wait);
     setServiceData(services);
 
-    if (wait.estimatedTime < 30) {
-      // Confirmação imediata para janelas curtas
+    if (wait.estimatedTime <= 20) {
       handleFinalConfirmation(wait.estimatedTime);
     } else {
       setFormStep('inQueue');
@@ -53,7 +52,6 @@ export default function HomePage() {
   };
 
   const handleCancel = () => {
-    console.log('O cliente saiu da fila.');
     setFormStep('signup');
   };
 
@@ -71,7 +69,6 @@ export default function HomePage() {
         description: 'Obrigado! Pode se dirigir ao salão.',
       });
     } catch (error) {
-      console.error('Falha ao confirmar presença:', error);
       const errorMessage =
         (error as any).response?.data?.message ||
         'Não foi possível confirmar sua presença agora. Tente novamente no salão.';

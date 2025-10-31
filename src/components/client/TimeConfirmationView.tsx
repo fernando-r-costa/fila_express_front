@@ -36,7 +36,6 @@ export function TimeConfirmationView({
 }: TimeConfirmationViewProps) {
   useEffect(() => {
     if (remainingTime <= 20) {
-      console.log('Tempo esgotado, confirmando automaticamente...');
       onConfirm();
     }
   }, [remainingTime, onConfirm]);
