@@ -25,7 +25,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { ArrowLeft, Calendar as CalendarIcon } from 'lucide-react';
+import { ArrowLeft, Calendar as CalendarIcon, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
@@ -50,6 +50,7 @@ type CancelledAppointment = {
   servicesRequested: string[];
   status: 'cancelled' | 'no_show';
   finishTime: string;
+  blocked?: boolean;
 };
 
 export default function ReportsPage() {
@@ -59,6 +60,9 @@ export default function ReportsPage() {
 
   const [date, setDate] = useState<Date>(new Date());
   const [showCancellations, setShowCancellations] = useState(false);
+  const [cancelStatus, setCancelStatus] = useState<
+    'all' | 'cancelled' | 'no_show'
+  >('all');
   const [completedData, setCompletedData] = useState<CompletedAppointment[]>(
     []
   );
@@ -118,7 +122,13 @@ export default function ReportsPage() {
       if (!salonId) return;
       setIsLoading(true);
       try {
-        const { data } = await api.get(`/history/cancelled/${salonId}`);
+        const dateParam = format(date, 'yyyy-MM-dd');
+        const params = new URLSearchParams();
+        if (dateParam) params.append('date', dateParam);
+        if (cancelStatus !== 'all') params.append('status', cancelStatus);
+        const { data } = await api.get(
+          `/history/cancelled/${salonId}?${params.toString()}`
+        );
         setCancelledData(data);
       } catch (error) {
         console.error('Erro ao buscar cancelamentos:', error);
@@ -136,7 +146,7 @@ export default function ReportsPage() {
     if (showCancellations) {
       fetchCancelledAppointments();
     }
-  }, [showCancellations, salonId, toast]);
+  }, [showCancellations, salonId, toast, date, cancelStatus]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -145,7 +155,12 @@ export default function ReportsPage() {
   }, [isAuthenticated, authLoading, router]);
 
   if (authLoading || isLoading) {
-    return <div>Carregando...</div>;
+    return (
+      <div className="flex min-h-[200px] items-center justify-center py-10 text-secondary">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        Carregando...
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
@@ -161,31 +176,47 @@ export default function ReportsPage() {
           </Link>
         </Button>
         <h1 className="text-2xl font-bold text-secondary">Relatórios</h1>
-        <div className="flex items-center gap-4">
-          {!showCancellations && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-[280px] justify-start text-left font-normal"
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {date ? (
-                    format(date, 'PPP', { locale: ptBR })
-                  ) : (
-                    <span>Selecione uma data</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={date}
-                  onSelect={(newDate) => setDate(newDate || new Date())}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
+        <div className="flex flex-wrap items-center gap-4">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-[280px] justify-start text-left font-normal"
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {date ? (
+                  format(date, 'PPP', { locale: ptBR })
+                ) : (
+                  <span>Selecione uma data</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar
+                mode="single"
+                selected={date}
+                onSelect={(newDate) => setDate(newDate || new Date())}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+          {showCancellations && (
+            <div className="flex items-center gap-2">
+              <select
+                id="statusFilter"
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                value={cancelStatus}
+                onChange={(e) =>
+                  setCancelStatus(
+                    e.target.value as 'all' | 'cancelled' | 'no_show'
+                  )
+                }
+              >
+                <option value="all">Todos</option>
+                <option value="cancelled">Cancelado</option>
+                <option value="no_show">Não compareceu</option>
+              </select>
+            </div>
           )}
           <Button
             variant="secondary"
@@ -201,10 +232,23 @@ export default function ReportsPage() {
       {showCancellations ? (
         <Card>
           <CardHeader>
-            <CardTitle>Relatório Geral de Cancelamentos</CardTitle>
+            <CardTitle>Relatório de Cancelamentos</CardTitle>
             <CardDescription>
-              Lista de todos os cancelamentos e não comparecimentos para
-              identificar padrões.
+              Cancelamentos e não comparecimentos para o dia{' '}
+              <span className="font-bold text-primary">
+                {format(date, 'dd/MM/yyyy')}
+              </span>
+              {cancelStatus !== 'all' && (
+                <>
+                  {' '}
+                  · Status:{' '}
+                  <span className="font-bold">
+                    {cancelStatus === 'no_show'
+                      ? 'Não compareceu'
+                      : 'Cancelado'}
+                  </span>
+                </>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -238,17 +282,22 @@ export default function ReportsPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant={
-                            item.status === 'no_show'
-                              ? 'destructive'
-                              : 'secondary'
-                          }
-                        >
-                          {item.status === 'no_show'
-                            ? 'Não compareceu'
-                            : 'Cancelado'}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={
+                              item.status === 'no_show'
+                                ? 'destructive'
+                                : 'secondary'
+                            }
+                          >
+                            {item.status === 'no_show'
+                              ? 'Não compareceu'
+                              : 'Cancelado'}
+                          </Badge>
+                          {item.status === 'no_show' && item.blocked && (
+                            <Badge variant="outline">Bloqueado</Badge>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

@@ -28,15 +28,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -47,8 +38,9 @@ import {
   History,
   Settings,
   UserX,
+  Loader2,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
 import { SettingsSheet } from '@/components/admin/SettingsSheet';
@@ -59,7 +51,11 @@ import { useToast } from '@/hooks/use-toast';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
-type WaitData = { estimatedTime: number; position: number };
+type WaitData = {
+  estimatedTime: number;
+  position: number;
+  appointmentId?: number;
+};
 
 type Client = {
   id: string;
@@ -69,8 +65,34 @@ type Client = {
   queue: QueueType;
   status: 'em_atendimento' | 'aguardando';
   waitTime: number;
+  serviceAllocations?: {
+    manicure?: { start?: string | Date; end?: string | Date };
+    pedicure?: { start?: string | Date; end?: string | Date };
+    brush?: { start?: string | Date; end?: string | Date };
+    meta?: { offsetAllowanceMinutes?: number; reservations?: any[] };
+  };
 };
 type QueueType = 'manicure_pedicure' | 'escova';
+
+type CapacitySummary = {
+  timestamp: string;
+  manicure_pedicure: {
+    total: number;
+    busy: number;
+    free: number;
+    inProgress: number;
+    resting: number;
+    reservations: number;
+  };
+  brush: {
+    total: number;
+    busy: number;
+    free: number;
+    inProgress: number;
+    resting: number;
+    reservations: number;
+  };
+};
 
 function StatusBadge({
   client,
@@ -99,6 +121,9 @@ interface QueueColumnProps {
   onRemove: (clientId: string) => void;
   onNoShow: (clientId: string) => void;
   isLoadingNext?: boolean;
+  capacityChips?: ReactNode;
+  disableCallNext?: boolean;
+  disableReason?: string;
 }
 
 function QueueColumn({
@@ -109,14 +134,15 @@ function QueueColumn({
   onRemove,
   onNoShow,
   isLoadingNext = false,
+  capacityChips,
+  disableCallNext = false,
+  disableReason,
 }: QueueColumnProps) {
-  const servicingClient = clients.find((c) => c.status === 'em_atendimento');
+  const servicingClients = clients.filter((c) => c.status === 'em_atendimento');
   const waitingClients = clients
     .filter((c) => c.status === 'aguardando')
     .sort((a, b) => a.position - b.position);
-  const allClientsInOrder = [servicingClient, ...waitingClients].filter(
-    Boolean
-  ) as Client[];
+  const allClientsInOrder = [...servicingClients, ...waitingClients];
 
   return (
     <Card>
@@ -127,10 +153,24 @@ function QueueColumn({
             <span className="text-xl font-bold">{clients.length}</span>{' '}
             cliente(s) no total.
           </CardDescription>
+          {/* Capacity chips injected by parent */}
+          {capacityChips}
         </div>
-        <Button onClick={onCallNext} disabled={isLoadingNext}>
-          {isLoadingNext ? 'Chamando...' : 'Chamar Próximo'}{' '}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              onClick={onCallNext}
+              disabled={isLoadingNext || disableCallNext}
+            >
+              {isLoadingNext ? 'Chamando...' : 'Chamar Próximo'}{' '}
+            </Button>
+          </TooltipTrigger>
+          {disableCallNext && (
+            <TooltipContent>
+              <p>{disableReason || 'Sem capacidade disponível no momento.'}</p>
+            </TooltipContent>
+          )}
+        </Tooltip>
       </CardHeader>
       <CardContent>
         <Table>
@@ -156,6 +196,64 @@ function QueueColumn({
                   minute: '2-digit',
                 });
               }
+              // Preparar info de reserva/segundo serviço
+              let nextServiceInfo: { label: string; timeStr: string } | null =
+                null;
+              let activeServices: string[] = [];
+              if (
+                client.status === 'em_atendimento' &&
+                client.serviceAllocations
+              ) {
+                const nowTs = Date.now();
+                const starts: { label: string; ts: number }[] = [];
+                const addIfFuture = (label: string, start: any) => {
+                  if (!start) return;
+                  const ts = new Date(start).getTime();
+                  if (ts > nowTs) starts.push({ label, ts });
+                };
+                addIfFuture(
+                  'Próximo serviço',
+                  client.serviceAllocations.pedicure?.start
+                );
+                addIfFuture(
+                  'Próximo serviço',
+                  client.serviceAllocations.manicure?.start
+                );
+                // brush normalmente já começou quando está nessa coluna, mas mantemos genérico
+                addIfFuture('Escova', client.serviceAllocations.brush?.start);
+                if (starts.length > 0) {
+                  const next = starts.sort((a, b) => a.ts - b.ts)[0];
+                  const d = new Date(next.ts);
+                  const timeStr = d.toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+                  nextServiceInfo = { label: next.label, timeStr };
+                }
+
+                const checkActive = (label: string, start?: any, end?: any) => {
+                  if (!start || !end) return;
+                  const s = new Date(start).getTime();
+                  const e = new Date(end).getTime();
+                  if (nowTs >= s && nowTs < e) activeServices.push(label);
+                };
+                checkActive(
+                  'MANICURE',
+                  client.serviceAllocations.manicure?.start,
+                  client.serviceAllocations.manicure?.end
+                );
+                checkActive(
+                  'PEDICURE',
+                  client.serviceAllocations.pedicure?.start,
+                  client.serviceAllocations.pedicure?.end
+                );
+                checkActive(
+                  'ESCOVA',
+                  client.serviceAllocations.brush?.start,
+                  client.serviceAllocations.brush?.end
+                );
+              }
+
               return (
                 <TableRow key={client.id}>
                   <TableCell className="font-bold">
@@ -163,8 +261,8 @@ function QueueColumn({
                   </TableCell>
                   <TableCell>
                     <div className="font-medium">{client.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {client.services.join(', ')}
+                    <div className="text-xs text-muted-foreground">
+                      {client.services.map((s) => s.toUpperCase()).join(', ')}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -179,6 +277,28 @@ function QueueColumn({
                           <span>{etaTime}</span>
                         </div>
                       )}
+                      {client.status === 'em_atendimento' &&
+                        nextServiceInfo && (
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            <span>
+                              {nextServiceInfo.label}: {nextServiceInfo.timeStr}
+                            </span>
+                          </div>
+                        )}
+                      {client.status === 'em_atendimento' &&
+                        activeServices.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1 text-[10px] uppercase text-muted-foreground">
+                            {activeServices.map((s) => (
+                              <span
+                                key={`${client.id}-${s}`}
+                                className="rounded border px-1 py-0.5"
+                              >
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
@@ -251,39 +371,134 @@ export default function DashboardPage() {
 
   const [queueData, setQueueData] = useState<Client[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
+  const [capacity, setCapacity] = useState<CapacitySummary | null>(null);
+  const [salonConfig, setSalonConfig] = useState<{
+    numberOfManicureStations: number;
+    numberOfBrushStations: number;
+  } | null>(null);
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSettingsSheetOpen, setIsSettingsSheetOpen] = useState(false);
-  const [isWarningModalOpen, setIsWarningModalOpen] = useState(false);
-  const [clientInServiceWarning, setClientInServiceWarning] = useState<
-    string | null
-  >(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCallingNext, setIsCallingNext] = useState<QueueType | null>(null);
+  // Evitar concorrência em atualizações silenciosas
+  const isRefreshingRef = useRef(false);
 
-  useEffect(() => {
-    if (isAuthenticated && salonId) {
-      const fetchQueueData = async () => {
-        setIsDataLoading(true);
+  const belongsToQueue = (c: Client, queueType: QueueType) => {
+    if (queueType === 'escova') {
+      return c.services.includes('escova');
+    }
+    return c.services.includes('manicure') || c.services.includes('pedicure');
+  };
+
+  const mapApiDataToClient = (apiData: any): Client => {
+    const serviceMapping: Record<string, string> = {
+      brush: 'escova',
+      manicure: 'manicure',
+      pedicure: 'pedicure',
+    };
+
+    const mappedServices = apiData.servicesRequested.map(
+      (service: string) => serviceMapping[service] || service
+    );
+
+    let queue: QueueType = 'manicure_pedicure';
+    if (mappedServices.includes('escova') && mappedServices.length === 1) {
+      queue = 'escova';
+    } else if (mappedServices.includes('escova')) {
+      queue = 'manicure_pedicure';
+    }
+
+    const statusMapping: Record<string, 'em_atendimento' | 'aguardando'> = {
+      waiting: 'aguardando',
+      confirmed: 'aguardando',
+      in_service: 'em_atendimento',
+      in_progress: 'em_atendimento',
+    };
+
+    return {
+      id: String(apiData.appointmentId),
+      position: apiData.position,
+      name: apiData.clientName,
+      services: mappedServices,
+      queue,
+      status: statusMapping[apiData.status] || 'aguardando',
+      waitTime: apiData.remainingTime || 0,
+      serviceAllocations: apiData.serviceAllocations,
+    };
+  };
+
+  const fetchSalonConfig = useCallback(async () => {
+    if (!salonId) return;
+    try {
+      const response = await api.get(`/salon/${salonId}`);
+      setSalonConfig({
+        numberOfManicureStations:
+          response.data.manicurePedicureAttendants ??
+          response.data.numberOfManicureStations ??
+          2,
+        numberOfBrushStations:
+          response.data.brushAttendants ??
+          response.data.numberOfBrushStations ??
+          1,
+      });
+    } catch (error) {
+      console.error('Falha ao buscar configuração do salão:', error);
+    }
+  }, [salonId]);
+
+  const fetchQueueData = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!salonId) return;
+      const silent = opts?.silent === true;
+      if (!silent) setIsDataLoading(true);
+      // Evitar múltiplos fetches concorrentes no modo silencioso
+      if (silent && isRefreshingRef.current) return;
+      try {
+        if (silent) isRefreshingRef.current = true;
+        const response = await api.get(`/queue/${salonId}`);
+        const mappedData = response.data.map(mapApiDataToClient);
+        setQueueData(mappedData);
+        // buscar capacidade
         try {
-          const response = await api.get(`/queue/${salonId}`);
-          setQueueData(response.data);
-        } catch (error) {
-          console.error('Falha ao buscar dados da fila:', error);
+          const cap = await api.get(`/queue/${salonId}/capacity`);
+          setCapacity(cap.data);
+        } catch (err) {
+          console.error('Falha ao buscar capacidade:', err);
+        }
+      } catch (error) {
+        console.error('Falha ao buscar dados da fila:', error);
+        if (!silent) {
           toast({
             title: 'Erro ao carregar fila',
             description:
               'Não foi possível buscar os dados da fila. Tente recarregar a página.',
             variant: 'destructive',
           });
-        } finally {
-          setIsDataLoading(false);
         }
-      };
+      } finally {
+        if (silent) isRefreshingRef.current = false;
+        if (!silent) setIsDataLoading(false);
+      }
+    },
+    [salonId, toast]
+  );
 
+  useEffect(() => {
+    if (isAuthenticated && salonId) {
       fetchQueueData();
+      fetchSalonConfig();
     }
-  }, [isAuthenticated, salonId, toast]);
+  }, [isAuthenticated, salonId, fetchQueueData, fetchSalonConfig]);
+
+  // Polling a cada 20s, modo silencioso (sem piscar loading)
+  useEffect(() => {
+    if (!isAuthenticated || !salonId) return;
+    const id = setInterval(() => {
+      fetchQueueData({ silent: true });
+    }, 30000);
+    return () => clearInterval(id);
+  }, [isAuthenticated, salonId, fetchQueueData]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -292,17 +507,52 @@ export default function DashboardPage() {
   }, [isAuthenticated, authLoading, router]);
 
   if (authLoading || (isAuthenticated && isDataLoading)) {
-    return <div>Carregando...</div>;
+    return (
+      <div className="flex min-h-[200px] items-center justify-center py-10 text-secondary">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        Carregando...
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
     return null;
   }
 
-  const manicureQueue = queueData.filter(
-    (c) => c.queue === 'manicure_pedicure'
+  const manicureQueue = queueData.filter((c) =>
+    belongsToQueue(c, 'manicure_pedicure')
   );
-  const escovaQueue = queueData.filter((c) => c.queue === 'escova');
+  const escovaQueue = queueData.filter((c) => belongsToQueue(c, 'escova'));
+
+  const renderCapacityChips = (queueType: QueueType) => {
+    if (!capacity) return null;
+    const cap =
+      queueType === 'escova' ? capacity.brush : capacity.manicure_pedicure;
+    return (
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase text-muted-foreground">
+        <span className="rounded border px-2 py-0.5">
+          Ocupação: {cap.busy}/{cap.total}
+        </span>
+        {cap.resting > 0 && (
+          <span className="rounded border px-2 py-0.5">
+            Descanso: {cap.resting}
+          </span>
+        )}
+        {cap.reservations > 0 && (
+          <span className="rounded border px-2 py-0.5">
+            Reservas: {cap.reservations}
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const isCallNextDisabled = (queueType: QueueType) => {
+    if (!capacity) return false; // sem dado, não bloqueia
+    const cap =
+      queueType === 'escova' ? capacity.brush : capacity.manicure_pedicure;
+    return cap.free <= 0;
+  };
 
   const handleManualAddComplete = async (
     client: ClientData,
@@ -318,29 +568,13 @@ export default function DashboardPage() {
       return;
     }
 
-    setIsSubmitting(true);
     try {
-      const servicesList = (
-        Object.keys(services) as Array<keyof ServiceData>
-      ).filter((k) => services[k] === true);
+      await fetchQueueData();
 
-      const payload = {
-        salonId: salonId,
-        clientName: client.name,
-        clientPhone: client.phone,
-        clientEmail: client.email,
-        servicesRequested: servicesList,
-      };
-
-      const response = await api.post('/join', payload);
-
-      const newClient = response.data;
-
-      setQueueData((prevData) => [...prevData, newClient]);
       setIsSheetOpen(false);
       toast({
         title: 'Cliente Adicionado!',
-        description: `${newClient.name} entrou na fila.`,
+        description: `${client.name} entrou na fila.`,
       });
     } catch (error) {
       console.error('Falha ao adicionar cliente:', error);
@@ -350,8 +584,6 @@ export default function DashboardPage() {
           'Não foi possível adicionar o cliente. Tente novamente mais tarde.',
         variant: 'destructive',
       });
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -366,16 +598,20 @@ export default function DashboardPage() {
     }
 
     try {
-      const response = await api.put('/config', settings);
+      const response = await api.put('/salon/config', settings);
 
       toast({
         title: 'Configurações Salvas!',
         description: 'As configurações do salão foram atualizadas com sucesso.',
       });
+      // Atualizar dados após salvar
+      await fetchSalonConfig();
+      await fetchQueueData();
       setIsSettingsSheetOpen(false);
     } catch (error) {
       console.error('Falha ao salvar configurações:', error);
       const errorMessage =
+        (error as any).response?.data?.error ||
         (error as any).response?.data?.message ||
         'Não foi possível salvar as configurações. Tente novamente.';
       toast({
@@ -396,17 +632,8 @@ export default function DashboardPage() {
       return;
     }
 
-    const servicingClient = queueData.find(
-      (c) => c.queue === queueType && c.status === 'em_atendimento'
-    );
-    if (servicingClient) {
-      setClientInServiceWarning(servicingClient.name);
-      setIsWarningModalOpen(true);
-      return;
-    }
-
     const waitingClients = queueData.filter(
-      (c) => c.queue === queueType && c.status === 'aguardando'
+      (c) => belongsToQueue(c, queueType) && c.status === 'aguardando'
     );
     if (waitingClients.length === 0) {
       toast({
@@ -418,26 +645,23 @@ export default function DashboardPage() {
 
     setIsCallingNext(queueType);
     try {
-      const response = await api.post('call-next', {
+      const backendQueueType =
+        queueType === 'escova' ? 'brush' : 'manicure_pedicure';
+      const response = await api.post('/call-next', {
         salonId,
-        queueType,
+        queueType: backendQueueType,
       });
 
-      const updatedClient = response.data;
-
-      setQueueData((prevData) =>
-        prevData.map((client) =>
-          client.id === updatedClient.id ? updatedClient : client
-        )
-      );
+      await fetchQueueData();
 
       toast({
         title: 'Cliente Chamado!',
-        description: `${updatedClient.name} está em atendimento.`,
+        description: response.data?.message || 'Cliente chamado com sucesso.',
       });
     } catch (error) {
       console.error('Falha ao chamar próximo cliente:', error);
       const errorMessage =
+        (error as any).response?.data?.error ||
         (error as any).response?.data?.message ||
         'Não foi possível chamar o cliente. Tente novamente.';
       toast({
@@ -463,11 +687,7 @@ export default function DashboardPage() {
     try {
       const response = await api.patch(`/appointments/${clientId}/finish`);
 
-      const updatedClient = response.data;
-
-      setQueueData((prevData) =>
-        prevData.filter((client) => client.id !== clientId)
-      );
+      await fetchQueueData();
 
       toast({
         title: 'Atendimento Finalizado!',
@@ -476,6 +696,7 @@ export default function DashboardPage() {
     } catch (error) {
       console.error('Falha ao finalizar atendimento:', error);
       const errorMessage =
+        (error as any).response?.data?.error ||
         (error as any).response?.data?.message ||
         'Não foi possível finalizar o atendimento. Tente novamente.';
       toast({
@@ -498,14 +719,10 @@ export default function DashboardPage() {
 
     try {
       const response = await api.patch(`/appointments/${clientId}/remove`, {
-        reason: 'removed_by_admin',
+        reason: 'cancelled',
       });
 
-      const updatedClient = response.data;
-
-      setQueueData((prevData) =>
-        prevData.filter((client) => client.id !== clientId)
-      );
+      await fetchQueueData();
 
       toast({
         title: 'Cliente Removido!',
@@ -514,6 +731,7 @@ export default function DashboardPage() {
     } catch (error) {
       console.error('Falha ao remover cliente:', error);
       const errorMessage =
+        (error as any).response?.data?.error ||
         (error as any).response?.data?.message ||
         'Não foi possível remover o cliente. Tente novamente.';
       toast({
@@ -539,11 +757,7 @@ export default function DashboardPage() {
         reason: 'no_show',
       });
 
-      const updatedClient = response.data;
-
-      setQueueData((prevData) =>
-        prevData.filter((client) => client.id !== clientId)
-      );
+      await fetchQueueData();
 
       toast({
         title: 'Cliente Marcado como Não Compareceu',
@@ -553,6 +767,7 @@ export default function DashboardPage() {
     } catch (error) {
       console.error('Falha ao marcar como não compareceu:', error);
       const errorMessage =
+        (error as any).response?.data?.error ||
         (error as any).response?.data?.message ||
         'Não foi possível marcar o cliente como não compareceu. Tente novamente.';
       toast({
@@ -565,9 +780,9 @@ export default function DashboardPage() {
 
   return (
     <TooltipProvider>
-      <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="bg-foreground/50 px-4 text-2xl font-bold uppercase text-secondary">
+      <main className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4 pt-2 md:gap-6 md:px-8 md:pb-8 md:pt-3">
+        <div className="sticky top-0 z-20 flex h-14 flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-transparent py-2">
+          <h1 className="my-0 flex items-center px-4 py-1 text-2xl font-bold uppercase leading-none text-secondary">
             Gerenciamento da Fila
           </h1>
           <div className="flex items-center gap-2">
@@ -585,6 +800,7 @@ export default function DashboardPage() {
                 <ClientSignUpFlow
                   onFlowComplete={handleManualAddComplete}
                   onCancel={() => setIsSheetOpen(false)}
+                  salonId={salonId ?? undefined}
                 />
               </SheetContent>
             </Sheet>
@@ -604,11 +820,14 @@ export default function DashboardPage() {
                   Configurações
                 </Button>
               </SheetTrigger>
-              <SheetContent className="w-full max-w-md bg-card">
+              <SheetContent className="w-full max-w-3xl bg-card">
                 <SheetHeader>
                   <SheetTitle>Configurações do Sistema</SheetTitle>
                 </SheetHeader>
-                <SettingsSheet onSave={handleSettingsSave} />
+                <SettingsSheet
+                  onSave={handleSettingsSave}
+                  salonId={salonId ?? undefined}
+                />
               </SheetContent>
             </Sheet>
           </div>
@@ -621,6 +840,9 @@ export default function DashboardPage() {
             onFinish={handleFinishService}
             onRemove={handleRemoveFromQueue}
             onNoShow={handleNoShow}
+            capacityChips={renderCapacityChips('manicure_pedicure')}
+            disableCallNext={isCallNextDisabled('manicure_pedicure')}
+            disableReason="Todos os atendentes desse pool estão ocupados no momento."
             isLoadingNext={isCallingNext === 'manicure_pedicure'}
           />
           <QueueColumn
@@ -630,27 +852,12 @@ export default function DashboardPage() {
             onFinish={handleFinishService}
             onRemove={handleRemoveFromQueue}
             onNoShow={handleNoShow}
+            capacityChips={renderCapacityChips('escova')}
+            disableCallNext={isCallNextDisabled('escova')}
+            disableReason="Todos os atendentes desse pool estão ocupados no momento."
             isLoadingNext={isCallingNext === 'escova'}
           />
         </div>
-        <AlertDialog
-          open={isWarningModalOpen}
-          onOpenChange={setIsWarningModalOpen}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Atendimento em Andamento</AlertDialogTitle>
-              <AlertDialogDescription>
-                Você precisa finalizar o atendimento de{' '}
-                <span className="font-bold">{clientInServiceWarning}</span>{' '}
-                antes de chamar o próximo cliente.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogAction>Entendido</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </main>
     </TooltipProvider>
   );

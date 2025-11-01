@@ -11,6 +11,7 @@ export default function Header() {
             alt="Logo do Salão Express"
             width={350}
             height={50}
+            className="h-auto w-auto max-w-[350px]"
             priority
           />
         </Link>
