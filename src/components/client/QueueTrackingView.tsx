@@ -115,7 +115,10 @@ export function QueueTrackingView({
               <AlertDialogFooter>
                 <AlertDialogCancel>Continuar na fila</AlertDialogCancel>
                 <AlertDialogAction
-                  onClick={onCancel}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onCancel();
+                  }}
                   className="bg-destructive"
                 >
                   Sim, cancelar

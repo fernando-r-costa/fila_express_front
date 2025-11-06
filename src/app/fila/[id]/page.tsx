@@ -138,20 +138,60 @@ export default function QueuePage() {
   }, [fetchData]);
 
   const handleCancel = async () => {
-    try {
-      await api.patch(`/appointments/${appointmentId}/remove`, {
-        reason: 'cancelled',
+    console.log('[QueuePage] handleCancel chamado', {
+      appointmentId,
+      hasData: !!data,
+      clientPhone: data?.clientPhone,
+    });
+
+    if (!data?.clientPhone) {
+      console.log('[QueuePage] Cancelamento bloqueado - sem telefone');
+      toast({
+        title: 'Dados insuficientes',
+        description: 'Não foi possível obter seu telefone para cancelar.',
+        variant: 'destructive',
       });
+      return;
+    }
+
+    try {
+      console.log('[QueuePage] Enviando requisição de cancelamento', {
+        url: `/appointments/${appointmentId}/remove`,
+        data: {
+          reason: 'cancelled',
+          clientPhone: data.clientPhone,
+        },
+      });
+
+      const response = await api.patch(
+        `/appointments/${appointmentId}/remove`,
+        {
+          reason: 'cancelled',
+          clientPhone: data.clientPhone,
+        }
+      );
+
+      console.log('[QueuePage] Cancelamento bem-sucedido', response.data);
+
       toast({
         title: 'Atendimento cancelado',
         description: 'Você saiu da fila.',
       });
       router.push('/');
     } catch (error) {
-      console.error('Erro ao cancelar:', error);
+      console.error('[QueuePage] Erro ao cancelar:', error);
+      console.error('[QueuePage] Detalhes do erro:', {
+        response: (error as any).response,
+        message: (error as any).message,
+      });
+
+      const errorMessage =
+        (error as any).response?.data?.error ||
+        (error as any).response?.data?.message ||
+        'Não foi possível cancelar. Tente novamente mais tarde ou no salão.';
       toast({
         title: 'Não foi possível cancelar',
-        description: 'Tente novamente mais tarde ou no salão.',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
