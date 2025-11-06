@@ -45,7 +45,11 @@ export default function HomePage() {
     setServiceData(services);
 
     if (wait.estimatedTime <= 20) {
-      handleFinalConfirmation(wait.estimatedTime);
+      // Chama confirmação imediatamente usando os dados recebidos (evita race com setState)
+      handleFinalConfirmation(wait.estimatedTime, {
+        appointmentId: wait.appointmentId,
+        clientPhone: client.phone,
+      });
     } else {
       setFormStep('inQueue');
     }
@@ -55,14 +59,21 @@ export default function HomePage() {
     setFormStep('signup');
   };
 
-  const handleFinalConfirmation = async (currentTime: number) => {
+  const handleFinalConfirmation = async (
+    currentTime: number,
+    override?: { appointmentId?: number; clientPhone?: string }
+  ) => {
     setFinalTime(currentTime);
     try {
-      if (!waitData?.appointmentId || !clientData?.phone) {
+      const effectiveAppointmentId =
+        override?.appointmentId ?? waitData?.appointmentId;
+      const effectiveClientPhone = override?.clientPhone ?? clientData?.phone;
+
+      if (!effectiveAppointmentId || !effectiveClientPhone) {
         throw new Error('Dados insuficientes para confirmar.');
       }
-      await api.patch(`/appointments/${waitData.appointmentId}/confirm`, {
-        clientPhone: clientData.phone,
+      await api.patch(`/appointments/${effectiveAppointmentId}/confirm`, {
+        clientPhone: effectiveClientPhone,
       });
       toast({
         title: 'Presença confirmada!',

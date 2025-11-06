@@ -71,6 +71,7 @@ type Client = {
     brush?: { start?: string | Date; end?: string | Date };
     meta?: { offsetAllowanceMinutes?: number; reservations?: any[] };
   };
+  finishedServices?: string[];
 };
 type QueueType = 'manicure_pedicure' | 'escova';
 
@@ -117,13 +118,14 @@ interface QueueColumnProps {
   title: string;
   clients: Client[];
   onCallNext: () => void;
-  onFinish: (clientId: string) => void;
+  onFinish: (clientId: string, services?: string[]) => void;
   onRemove: (clientId: string) => void;
   onNoShow: (clientId: string) => void;
   isLoadingNext?: boolean;
   capacityChips?: ReactNode;
   disableCallNext?: boolean;
   disableReason?: string;
+  queueType?: QueueType;
 }
 
 function QueueColumn({
@@ -137,11 +139,36 @@ function QueueColumn({
   capacityChips,
   disableCallNext = false,
   disableReason,
+  queueType,
 }: QueueColumnProps) {
   const servicingClients = clients.filter((c) => c.status === 'em_atendimento');
+
+  // Ordenar clientes aguardando pelo horário de início do serviço específico deste pool
   const waitingClients = clients
     .filter((c) => c.status === 'aguardando')
-    .sort((a, b) => a.position - b.position);
+    .sort((a, b) => {
+      // Pegar o horário de início do serviço relevante para este pool
+      const getPoolStartTime = (client: Client): number => {
+        if (!client.serviceAllocations) return 0;
+
+        if (queueType === 'escova') {
+          // Pool de escova: usar brush.start
+          const brushStart = client.serviceAllocations.brush?.start;
+          return brushStart ? new Date(brushStart).getTime() : 0;
+        } else {
+          // Pool de manicure/pedicure: usar o menor entre manicure.start e pedicure.start
+          const maniStart = client.serviceAllocations.manicure?.start;
+          const pediStart = client.serviceAllocations.pedicure?.start;
+          const times: number[] = [];
+          if (maniStart) times.push(new Date(maniStart).getTime());
+          if (pediStart) times.push(new Date(pediStart).getTime());
+          return times.length > 0 ? Math.min(...times) : 0;
+        }
+      };
+
+      return getPoolStartTime(a) - getPoolStartTime(b);
+    });
+
   const allClientsInOrder = [...servicingClients, ...waitingClients];
 
   return (
@@ -183,8 +210,15 @@ function QueueColumn({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {allClientsInOrder.map((client) => {
+            {allClientsInOrder.map((client, index) => {
               const isWaiting = client.status === 'aguardando';
+
+              // Calcular posição local baseada na ordem após sorting
+              // Posição = índice - número de clientes em atendimento + 1
+              const localPosition = isWaiting
+                ? index - servicingClients.length + 1
+                : null;
+
               let etaTime: string | null = null;
               if (isWaiting && client.waitTime) {
                 const now = new Date();
@@ -257,7 +291,7 @@ function QueueColumn({
               return (
                 <TableRow key={client.id}>
                   <TableCell className="font-bold">
-                    {client.status === 'em_atendimento' ? '-' : client.position}
+                    {client.status === 'em_atendimento' ? '-' : localPosition}
                   </TableCell>
                   <TableCell>
                     <div className="font-medium">{client.name}</div>
@@ -305,20 +339,65 @@ function QueueColumn({
                     <div className="flex items-center justify-end gap-2">
                       {client.status === 'em_atendimento' ? (
                         <>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => onFinish(client.id)}
-                              >
-                                <CheckCircle className="h-4 w-4 text-green-500" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Finalizar Atendimento</p>
-                            </TooltipContent>
-                          </Tooltip>
+                          {(() => {
+                            // Determinar quais serviços deste pool ainda não foram finalizados
+                            const finished = client.finishedServices || [];
+                            const hasManicure =
+                              client.services.includes('manicure');
+                            const hasPedicure =
+                              client.services.includes('pedicure');
+                            const hasBrush = client.services.includes('escova');
+
+                            const maniFinished = finished.includes('manicure');
+                            const pediFinished = finished.includes('pedicure');
+                            const brushFinished = finished.includes('brush');
+
+                            // Serviços deste pool que ainda não foram finalizados
+                            let poolServices: string[] = [];
+                            let tooltipText = 'Finalizar Atendimento';
+
+                            if (queueType === 'manicure_pedicure') {
+                              if (hasManicure && !maniFinished)
+                                poolServices.push('manicure');
+                              if (hasPedicure && !pediFinished)
+                                poolServices.push('pedicure');
+                              if (poolServices.length > 0) {
+                                tooltipText = `Finalizar ${poolServices
+                                  .map(
+                                    (s) =>
+                                      s.charAt(0).toUpperCase() + s.slice(1)
+                                  )
+                                  .join(' + ')}`;
+                              }
+                            } else if (queueType === 'escova') {
+                              if (hasBrush && !brushFinished) {
+                                poolServices.push('brush');
+                                tooltipText = 'Finalizar Escova';
+                              }
+                            }
+
+                            // Se não há serviços deste pool para finalizar, não mostrar botão
+                            if (poolServices.length === 0) return null;
+
+                            return (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() =>
+                                      onFinish(client.id, poolServices)
+                                    }
+                                  >
+                                    <CheckCircle className="h-4 w-4 text-green-500" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{tooltipText}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })()}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -425,6 +504,7 @@ export default function DashboardPage() {
       status: statusMapping[apiData.status] || 'aguardando',
       waitTime: apiData.remainingTime || 0,
       serviceAllocations: apiData.serviceAllocations,
+      finishedServices: apiData.finishedServices || [],
     };
   };
 
@@ -496,7 +576,7 @@ export default function DashboardPage() {
     if (!isAuthenticated || !salonId) return;
     const id = setInterval(() => {
       fetchQueueData({ silent: true });
-    }, 30000);
+    }, 20000);
     return () => clearInterval(id);
   }, [isAuthenticated, salonId, fetchQueueData]);
 
@@ -674,7 +754,10 @@ export default function DashboardPage() {
     }
   };
 
-  const handleFinishService = async (clientId: string) => {
+  const handleFinishService = async (
+    clientId: string,
+    servicesToFinish?: string[]
+  ) => {
     if (!salonId) {
       toast({
         title: 'Erro de autenticação',
@@ -685,13 +768,25 @@ export default function DashboardPage() {
     }
 
     try {
-      const response = await api.patch(`/appointments/${clientId}/finish`);
+      if (servicesToFinish && servicesToFinish.length > 0) {
+        // Finalização parcial (por pool)
+        await api.patch(`/appointments/${clientId}/finish-service`, {
+          services: servicesToFinish,
+        });
+      } else {
+        // Finalização completa
+        await api.patch(`/appointments/${clientId}/finish`);
+      }
 
       await fetchQueueData();
 
+      const serviceNames = servicesToFinish
+        ? servicesToFinish.map((s) => s.toUpperCase()).join(', ')
+        : 'todos os serviços';
+
       toast({
         title: 'Atendimento Finalizado!',
-        description: `O atendimento foi concluído com sucesso.`,
+        description: `${serviceNames} concluído(s) com sucesso.`,
       });
     } catch (error) {
       console.error('Falha ao finalizar atendimento:', error);
@@ -844,6 +939,7 @@ export default function DashboardPage() {
             disableCallNext={isCallNextDisabled('manicure_pedicure')}
             disableReason="Todos os atendentes desse pool estão ocupados no momento."
             isLoadingNext={isCallingNext === 'manicure_pedicure'}
+            queueType="manicure_pedicure"
           />
           <QueueColumn
             title="Escova"
@@ -856,6 +952,7 @@ export default function DashboardPage() {
             disableCallNext={isCallNextDisabled('escova')}
             disableReason="Todos os atendentes desse pool estão ocupados no momento."
             isLoadingNext={isCallingNext === 'escova'}
+            queueType="escova"
           />
         </div>
       </main>

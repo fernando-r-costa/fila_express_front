@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -34,8 +34,11 @@ export function TimeConfirmationView({
   onConfirm,
   onCancel,
 }: TimeConfirmationViewProps) {
+  const hasAutoConfirmed = useRef(false);
+
   useEffect(() => {
-    if (remainingTime <= 20) {
+    if (remainingTime <= 20 && !hasAutoConfirmed.current) {
+      hasAutoConfirmed.current = true;
       onConfirm();
     }
   }, [remainingTime, onConfirm]);

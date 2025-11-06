@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +22,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { TimeConfirmationView } from './TimeConfirmationView';
+import { Clock, Bell } from 'lucide-react';
 
 type ServiceData = {
   manicure: boolean;
@@ -44,17 +45,9 @@ export function QueueTrackingView({
   onCancel,
   onFinalConfirmation,
 }: QueueTrackingViewProps) {
-  const [time, setTime] = useState(initialTime);
-  const [position, setPosition] = useState(initialPosition);
   const [eta, setEta] = useState<string | null>(null);
 
-  const timePerPosition = useMemo(() => {
-    if (initialPosition <= 1 || initialTime <= 30) {
-      return Infinity;
-    }
-    return (initialTime - 30) / (initialPosition - 1);
-  }, [initialTime, initialPosition]);
-
+  // Calcular horário previsto baseado no tempo de entrada
   useEffect(() => {
     const now = new Date();
     const etaDate = new Date(now.getTime() + initialTime * 60000);
@@ -65,59 +58,31 @@ export function QueueTrackingView({
     setEta(formattedEta);
   }, [initialTime]);
 
-  useEffect(() => {
-    const ONE_MINUTE = 1000;
-
-    if (time > 0) {
-      const timer = setInterval(() => {
-        setTime((prevTime) => prevTime - 1);
-      }, ONE_MINUTE);
-      return () => clearInterval(timer);
-    }
-  }, [time, position]);
-
-  useEffect(() => {
-    if (timePerPosition === Infinity) return;
-
-    const elapsedTime = initialTime - time;
-    const positionsAdvanced = Math.floor(elapsedTime / timePerPosition);
-    const newPosition = initialPosition - positionsAdvanced;
-
-    setPosition(Math.max(1, newPosition));
-  }, [time, initialTime, initialPosition, timePerPosition]);
-
   const selectedServices = Object.entries(serviceData)
     .filter(([, isSelected]) => isSelected)
     .map(([service]) => service.charAt(0).toUpperCase() + service.slice(1));
-
-  if (time <= 30) {
-    return (
-      <TimeConfirmationView
-        remainingTime={time}
-        onConfirm={() => onFinalConfirmation(time)}
-        onCancel={onCancel}
-      />
-    );
-  }
 
   return (
     <form>
       <Card className="w-full max-w-sm text-center">
         <CardHeader>
           <CardTitle className="text-2xl">Você está na Fila!</CardTitle>
-          <CardDescription>
-            Acompanhe sua posição e<br /> o horário previsto.
-          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4">
-          <div className="flex justify-center gap-4">
-            <div>
-              <p className="text-sm font-medium">Sua Posição:</p>
-              <p className="text-4xl font-bold text-primary">{position}ª</p>
+        <CardContent className="grid gap-6">
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Clock className="h-5 w-5" />
+              <p className="text-sm font-medium">
+                Horário Previsto de Atendimento:
+              </p>
             </div>
-            <div>
-              <p className="text-sm font-medium">Horário Previsto:</p>
-              <p className="text-4xl font-bold text-primary">{eta}</p>
+            <p className="text-6xl font-bold text-primary">{eta || '--:--'}</p>
+            <div className="mt-2 flex items-start gap-2 text-left">
+              <Bell className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">
+                O horário pode alterar conforme evolução da fila. Você receberá
+                uma notificação quando faltar 30 minutos para o atendimento.
+              </p>
             </div>
           </div>
           {selectedServices.length > 0 && (
