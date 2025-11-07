@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { QueueTrackingView } from '@/components/client/QueueTrackingView';
 import { TimeConfirmationView } from '@/components/client/TimeConfirmationView';
-import { TimeConfirmationSkeleton } from '@/components/client/TimeConfirmationSkeleton';
 import {
   Card,
   CardContent,
@@ -12,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
@@ -35,11 +34,16 @@ export default function QueuePage() {
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [finalTime, setFinalTime] = useState<number | null>(null);
   const isConfirmedRef = useRef(false);
+  const dataRef = useRef<TrackingData | null>(null);
 
-  // Sincronizar ref com state
+  // Sincronizar refs com states
   useEffect(() => {
     isConfirmedRef.current = isConfirmed;
   }, [isConfirmed]);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   const salonId = useMemo(() => {
     const envVar = process.env.NEXT_PUBLIC_SALON_ID;
@@ -54,21 +58,89 @@ export default function QueuePage() {
     };
   };
 
+  const handleFinalConfirmation = useCallback(
+    async (currentTime: number, clientPhone?: string) => {
+      const phone = clientPhone || dataRef.current?.clientPhone;
+      if (!phone) {
+        toast({
+          title: 'Dados insuficientes',
+          description: 'Não foi possível obter seu telefone para confirmar.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      try {
+        const response = await api.patch(
+          `/appointments/${appointmentId}/confirm`,
+          {
+            clientPhone: phone,
+          }
+        );
+
+        // Buscar o agendamento atualizado para pegar o startTimeSlot real do backend
+        const { data: queue } = await api.get(`/queue/${salonId}`);
+        const confirmedAppointment = queue.find(
+          (apt: any) => apt.appointmentId === appointmentId
+        );
+
+        if (confirmedAppointment?.startTimeSlot) {
+          // Usar o horário do backend ao invés de calcular localmente
+          const etaDate = new Date(confirmedAppointment.startTimeSlot);
+          setFinalTime(null); // Não usamos mais finalTime para calcular
+          // Guardar o horário formatado diretamente
+          const formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          // Armazenar em um novo state
+          setData((prev) =>
+            prev ? ({ ...prev, confirmedEta: formattedEta } as any) : null
+          );
+        } else {
+          setFinalTime(currentTime); // Fallback
+        }
+
+        toast({
+          title: 'Presença confirmada!',
+          description: 'Obrigado! Até já.',
+        });
+        setIsConfirmed(true);
+      } catch (error) {
+        console.error('Erro ao confirmar presença:', error);
+        const errorMessage =
+          (error as any).response?.data?.message ||
+          'Não foi possível confirmar sua presença agora. Tente novamente.';
+        toast({
+          title: 'Confirmação não concluída',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
+    },
+    [appointmentId, salonId, toast]
+  );
+
+  // Confirmação automática quando tempo <= 20 minutos
+  const handleAutoConfirmation = useCallback(
+    async (currentTime: number, clientPhone: string) => {
+      console.log('[QueuePage] Iniciando confirmação automática');
+      await handleFinalConfirmation(currentTime, clientPhone);
+    },
+    [handleFinalConfirmation]
+  );
+
   const fetchData = useCallback(async () => {
     console.log('[QueuePage] fetchData iniciado', {
-      salonId,
       appointmentId,
       isConfirmed: isConfirmedRef.current,
     });
 
-    if (!salonId || Number.isNaN(appointmentId)) {
-      console.log('[QueuePage] Dados insuficientes', {
-        salonId,
-        appointmentId,
-      });
+    if (Number.isNaN(appointmentId)) {
+      console.log('[QueuePage] ID inválido', { appointmentId });
       toast({
-        title: 'Dados insuficientes',
-        description: 'Configuração do salão ou ID inválido.',
+        title: 'ID inválido',
+        description: 'O link do agendamento está incorreto.',
         variant: 'destructive',
       });
       return;
@@ -81,60 +153,89 @@ export default function QueuePage() {
     }
 
     try {
-      console.log('[QueuePage] Buscando fila...', `/queue/${salonId}`);
-      const { data: queue } = await api.get(`/queue/${salonId}`);
-      console.log('[QueuePage] Fila recebida', {
-        total: queue.length,
-        appointmentId,
-      });
-
-      const found = queue.find(
-        (apt: any) => apt.appointmentId === appointmentId
+      console.log(
+        '[QueuePage] Buscando agendamento...',
+        `/appointments/${appointmentId}/track`
       );
+      const { data: appointment } = await api.get(
+        `/appointments/${appointmentId}/track`
+      );
+      console.log('[QueuePage] Agendamento recebido', appointment);
 
-      if (!found) {
-        console.log('[QueuePage] Agendamento não encontrado na fila');
+      // Se o agendamento foi finalizado ou cancelado, redireciona para home
+      if (['finished', 'cancelled', 'no_show'].includes(appointment.status)) {
+        console.log(
+          '[QueuePage] Agendamento não está mais ativo',
+          appointment.status
+        );
         toast({
-          title: 'Agendamento não encontrado',
-          description: 'Verifique o link recebido do salão.',
-          variant: 'destructive',
+          title: 'Agendamento finalizado',
+          description: 'Este agendamento já foi concluído ou cancelado.',
+          variant: 'default',
         });
         router.push('/');
         return;
       }
 
-      console.log('[QueuePage] Agendamento encontrado', {
-        remainingTime: found.remainingTime,
-        position: found.position,
-        notified: found.notified,
-      });
-
       const tracking: TrackingData = {
-        initialTime: Number(found.remainingTime ?? 0),
-        initialPosition: found.position ?? null,
-        serviceData: mapServicesFromBackend(found.servicesRequested || []),
-        clientPhone: found.clientPhone || '',
-        notified: found.notified ?? false,
+        initialTime: Number(appointment.remainingTime ?? 0),
+        initialPosition: appointment.position ?? null,
+        serviceData: mapServicesFromBackend(
+          appointment.servicesRequested || []
+        ),
+        clientPhone: appointment.clientPhone || '',
+        notified: appointment.notified ?? false,
       };
       setData(tracking);
+
+      // Se tempo <= 20 minutos, confirma automaticamente
+      if (tracking.initialTime <= 20 && !isConfirmedRef.current) {
+        console.log('[QueuePage] Tempo <= 20 min, confirmando automaticamente');
+        // Chamar diretamente handleFinalConfirmation para evitar dependência circular
+        await handleFinalConfirmation(
+          tracking.initialTime,
+          tracking.clientPhone
+        );
+      }
     } catch (error) {
-      console.error('Erro ao buscar fila:', error);
+      console.error('Erro ao buscar agendamento:', error);
       toast({
         title: 'Falha ao carregar',
-        description: 'Não foi possível carregar seu agendamento agora.',
+        description: 'Agendamento não foi encontrado.',
         variant: 'destructive',
       });
     }
-  }, [salonId, appointmentId, toast, router]);
+  }, [appointmentId, toast, router, handleFinalConfirmation]);
 
   useEffect(() => {
     console.log('[QueuePage] useEffect montado - carregando dados iniciais');
-    setIsLoading(true);
-    fetchData();
-    setIsLoading(false);
+    const loadInitialData = async () => {
+      setIsLoading(true);
+      await fetchData();
+      setIsLoading(false);
+    };
 
-    // Sem polling - dados são baseados no momento de entrada na fila
-    // Cliente receberá notificação quando faltar 30 minutos
+    loadInitialData();
+
+    // Polling a cada 30 segundos para atualizar o tempo estimado
+    // O tempo é recalculado no backend toda vez que chama o próximo
+    // Para quando o cliente confirma presença
+    const intervalId = setInterval(() => {
+      if (!isConfirmedRef.current) {
+        console.log('[QueuePage] Polling - atualizando dados da fila');
+        fetchData();
+      } else {
+        console.log(
+          '[QueuePage] Polling cancelado - cliente já confirmou presença'
+        );
+        clearInterval(intervalId);
+      }
+    }, 30000); // 30 segundos
+
+    return () => {
+      console.log('[QueuePage] Limpando interval de polling');
+      clearInterval(intervalId);
+    };
   }, [fetchData]);
 
   const handleCancel = async () => {
@@ -197,69 +298,11 @@ export default function QueuePage() {
     }
   };
 
-  const handleFinalConfirmation = async (currentTime: number) => {
-    if (!data?.clientPhone) {
-      toast({
-        title: 'Dados insuficientes',
-        description: 'Não foi possível obter seu telefone para confirmar.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    try {
-      const response = await api.patch(
-        `/appointments/${appointmentId}/confirm`,
-        {
-          clientPhone: data.clientPhone,
-        }
-      );
-
-      // Buscar o agendamento atualizado para pegar o startTimeSlot real do backend
-      const { data: queue } = await api.get(`/queue/${salonId}`);
-      const confirmedAppointment = queue.find(
-        (apt: any) => apt.appointmentId === appointmentId
-      );
-
-      if (confirmedAppointment?.startTimeSlot) {
-        // Usar o horário do backend ao invés de calcular localmente
-        const etaDate = new Date(confirmedAppointment.startTimeSlot);
-        setFinalTime(null); // Não usamos mais finalTime para calcular
-        // Guardar o horário formatado diretamente
-        const formattedEta = etaDate.toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        // Armazenar em um novo state
-        setData((prev) =>
-          prev ? ({ ...prev, confirmedEta: formattedEta } as any) : null
-        );
-      } else {
-        setFinalTime(currentTime); // Fallback
-      }
-
-      toast({
-        title: 'Presença confirmada!',
-        description: 'Obrigado! Até já.',
-      });
-      setIsConfirmed(true);
-    } catch (error) {
-      console.error('Erro ao confirmar presença:', error);
-      const errorMessage =
-        (error as any).response?.data?.message ||
-        'Não foi possível confirmar sua presença agora. Tente novamente.';
-      toast({
-        title: 'Confirmação não concluída',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-    }
-  };
-
   if (isLoading || !data) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <TimeConfirmationSkeleton />
+      <div className="flex min-h-[200px] items-center justify-center py-10 text-secondary">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        Carregando seu agendamento...
       </div>
     );
   }
@@ -281,7 +324,7 @@ export default function QueuePage() {
     }
 
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex flex-col items-center justify-center">
         <Card className="w-full max-w-sm text-center">
           <CardHeader>
             <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
@@ -309,9 +352,9 @@ export default function QueuePage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="relative w-full">
-        {data.notified && data.initialTime <= 30 ? (
+    <div className="flex flex-col items-center justify-center">
+      <div className="p-4">
+        {data.initialTime > 20 && data.initialTime <= 30 ? (
           <TimeConfirmationView
             remainingTime={data.initialTime}
             onConfirm={() => handleFinalConfirmation(data.initialTime)}
