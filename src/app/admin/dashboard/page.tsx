@@ -558,6 +558,21 @@ export default function DashboardPage() {
         }
       } catch (error) {
         console.error('Falha ao buscar dados da fila:', error);
+
+        // Se receber 401 (não autorizado), redirecionar para login
+        if ((error as any).response?.status === 401) {
+          console.log(
+            'Sessão expirada ou não autorizada. Redirecionando para login...'
+          );
+          toast({
+            title: 'Sessão Expirada',
+            description: 'Sua sessão expirou. Faça login novamente.',
+            variant: 'destructive',
+          });
+          router.push('/admin');
+          return;
+        }
+
         if (!silent) {
           toast({
             title: 'Erro ao carregar fila',
@@ -571,7 +586,7 @@ export default function DashboardPage() {
         if (!silent) setIsDataLoading(false);
       }
     },
-    [salonId, toast]
+    [salonId, toast, router]
   );
 
   useEffect(() => {
