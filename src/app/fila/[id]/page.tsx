@@ -105,6 +105,7 @@ export default function QueuePage() {
       } catch (error) {
         console.error('Erro ao confirmar presença:', error);
         const errorMessage =
+          (error as any).response?.data?.error ||
           (error as any).response?.data?.message ||
           'Não foi possível confirmar sua presença agora. Tente novamente.';
         toast({
@@ -170,6 +171,32 @@ export default function QueuePage() {
           variant: 'default',
         });
         router.push('/');
+        return;
+      }
+
+      // Se já está confirmado no backend, mostrar tela de confirmação
+      if (appointment.status === 'confirmed' && !isConfirmedRef.current) {
+        console.log('[QueuePage] Agendamento já confirmado no backend');
+        const etaDate = new Date(appointment.startTimeSlot);
+        const formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        // Criar dados completos com confirmedEta
+        const tracking: TrackingData = {
+          initialTime: Number(appointment.remainingTime ?? 0),
+          initialPosition: appointment.position ?? null,
+          serviceData: mapServicesFromBackend(
+            appointment.servicesRequested || []
+          ),
+          clientPhone: appointment.clientPhone || '',
+          notified: appointment.notified ?? false,
+          confirmedEta: formattedEta,
+        };
+
+        setData(tracking);
+        setIsConfirmed(true);
         return;
       }
 

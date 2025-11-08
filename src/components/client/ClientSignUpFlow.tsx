@@ -77,10 +77,11 @@ export function ClientSignUpFlow({
       setFormStep('confirmation');
     } catch (error) {
       const errorMessage =
+        (error as any).response?.data?.error ||
         (error as any).response?.data?.message ||
         'Não foi possível estimar o tempo agora. Tente novamente.';
       toast({
-        title: 'Falha na estimativa',
+        title: 'Não foi possível prosseguir',
         description: errorMessage,
         variant: 'destructive',
       });
@@ -118,6 +119,7 @@ export function ClientSignUpFlow({
         onFlowComplete(clientData, serviceData, nextWait);
       } catch (error) {
         const errorMessage =
+          (error as any).response?.data?.error ||
           (error as any).response?.data?.message ||
           'Não foi possível concluir sua entrada na fila. Tente novamente.';
         toast({

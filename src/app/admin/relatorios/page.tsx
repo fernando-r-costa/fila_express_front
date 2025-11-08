@@ -101,10 +101,13 @@ export default function ReportsPage() {
         setCompletedData(data);
       } catch (error) {
         console.error('Erro ao buscar atendimentos finalizados:', error);
+        const errorMessage =
+          (error as any).response?.data?.error ||
+          (error as any).response?.data?.message ||
+          'Não foi possível buscar os atendimentos finalizados. Tente novamente.';
         toast({
           title: 'Erro ao carregar histórico',
-          description:
-            'Não foi possível buscar os atendimentos finalizados. Tente novamente.',
+          description: errorMessage,
           variant: 'destructive',
         });
       } finally {
@@ -132,10 +135,13 @@ export default function ReportsPage() {
         setCancelledData(data);
       } catch (error) {
         console.error('Erro ao buscar cancelamentos:', error);
+        const errorMessage =
+          (error as any).response?.data?.error ||
+          (error as any).response?.data?.message ||
+          'Não foi possível buscar o histórico de cancelamentos. Tente novamente.';
         toast({
           title: 'Erro ao carregar cancelamentos',
-          description:
-            'Não foi possível buscar o histórico de cancelamentos. Tente novamente.',
+          description: errorMessage,
           variant: 'destructive',
         });
       } finally {
