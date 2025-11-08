@@ -78,22 +78,18 @@ export default function QueuePage() {
           }
         );
 
-        // Buscar o agendamento atualizado para pegar o startTimeSlot real do backend
-        const { data: queue } = await api.get(`/queue/${salonId}`);
-        const confirmedAppointment = queue.find(
-          (apt: any) => apt.appointmentId === appointmentId
+        // Buscar o agendamento atualizado usando a rota pública
+        const { data: trackingData } = await api.get(
+          `/appointments/${appointmentId}/track`
         );
 
-        if (confirmedAppointment?.startTimeSlot) {
-          // Usar o horário do backend ao invés de calcular localmente
-          const etaDate = new Date(confirmedAppointment.startTimeSlot);
-          setFinalTime(null); // Não usamos mais finalTime para calcular
-          // Guardar o horário formatado diretamente
+        if (trackingData?.startTimeSlot) {
+          // Usar o horário do backend
+          const etaDate = new Date(trackingData.startTimeSlot);
           const formattedEta = etaDate.toLocaleTimeString('pt-BR', {
             hour: '2-digit',
             minute: '2-digit',
           });
-          // Armazenar em um novo state
           setData((prev) =>
             prev ? ({ ...prev, confirmedEta: formattedEta } as any) : null
           );
@@ -118,7 +114,7 @@ export default function QueuePage() {
         });
       }
     },
-    [appointmentId, salonId, toast]
+    [appointmentId, toast]
   );
 
   // Confirmação automática quando tempo <= 20 minutos
@@ -357,7 +353,9 @@ export default function QueuePage() {
         {data.initialTime > 20 && data.initialTime <= 30 ? (
           <TimeConfirmationView
             remainingTime={data.initialTime}
-            onConfirm={() => handleFinalConfirmation(data.initialTime)}
+            onConfirm={() =>
+              handleFinalConfirmation(data.initialTime, data.clientPhone)
+            }
             onCancel={handleCancel}
           />
         ) : (
