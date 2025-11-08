@@ -65,6 +65,7 @@ type Client = {
   queue: QueueType;
   status: 'em_atendimento' | 'aguardando';
   waitTime: number;
+  confirmed?: boolean;
   serviceAllocations?: {
     manicure?: { start?: string | Date; end?: string | Date };
     pedicure?: { start?: string | Date; end?: string | Date };
@@ -105,6 +106,12 @@ function StatusBadge({
   if (client.status === 'em_atendimento') return <Badge>Em Atendimento</Badge>;
   if (waitingClients.length > 0 && waitingClients[0].name === client.name)
     return <Badge variant="secondary">Próximo</Badge>;
+  if (client.confirmed)
+    return (
+      <Badge variant="outline" className="border-green-500 text-green-500">
+        Confirmado
+      </Badge>
+    );
   if (client.waitTime <= 30)
     return (
       <Badge variant="outline" className="border-yellow-500 text-yellow-500">
@@ -491,8 +498,10 @@ export default function DashboardPage() {
     const statusMapping: Record<string, 'em_atendimento' | 'aguardando'> = {
       waiting: 'aguardando',
       confirmed: 'aguardando',
-      in_service: 'em_atendimento',
       in_progress: 'em_atendimento',
+      finished: 'aguardando', // Já finalizados normalmente não aparecem na fila
+      cancelled: 'aguardando', // Cancelados normalmente não aparecem na fila
+      no_show: 'aguardando', // No-show normalmente não aparecem na fila
     };
 
     return {
@@ -503,6 +512,7 @@ export default function DashboardPage() {
       queue,
       status: statusMapping[apiData.status] || 'aguardando',
       waitTime: apiData.remainingTime || 0,
+      confirmed: apiData.status === 'confirmed',
       serviceAllocations: apiData.serviceAllocations,
       finishedServices: apiData.finishedServices || [],
     };
