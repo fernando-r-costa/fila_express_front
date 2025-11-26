@@ -103,21 +103,57 @@ function StatusBadge({
   client: Client;
   waitingClients: Client[];
 }) {
+  // Calcular tempo até o início do atendimento
+  const getMinutesUntilStart = () => {
+    const allocations = client.serviceAllocations;
+    if (!allocations) return Infinity;
+
+    // Encontrar o menor horário de início entre todos os serviços
+    let earliestStart: Date | null = null;
+    ['manicure', 'pedicure', 'brush'].forEach((service) => {
+      const alloc = allocations[service as 'manicure' | 'pedicure' | 'brush'];
+      if (alloc && 'start' in alloc && alloc.start) {
+        const startTime = new Date(alloc.start);
+        if (!earliestStart || startTime < earliestStart) {
+          earliestStart = startTime;
+        }
+      }
+    });
+
+    if (!earliestStart) return Infinity;
+
+    const now = new Date();
+    const minutesUntilStart = Math.round(
+      (earliestStart.getTime() - now.getTime()) / 60000
+    );
+    return minutesUntilStart;
+  };
+
+  const minutesUntilStart = getMinutesUntilStart();
+
+  // Prioridade: Em Atendimento > Próximo (< 10min) > Confirmado > Notificado > Aguardando
   if (client.status === 'em_atendimento') return <Badge>Em Atendimento</Badge>;
-  if (waitingClients.length > 0 && waitingClients[0].name === client.name)
+
+  // Próximo: menos de 10 minutos para iniciar
+  if (minutesUntilStart <= 10 && minutesUntilStart >= 0)
     return <Badge variant="secondary">Próximo</Badge>;
+
+  // Confirmado: status confirmed e mais de 10 minutos
   if (client.confirmed)
     return (
       <Badge variant="outline" className="border-green-500 text-green-500">
         Confirmado
       </Badge>
     );
+
+  // Notificado: 30 minutos ou menos (mas não confirmado)
   if (client.waitTime <= 30)
     return (
       <Badge variant="outline" className="border-yellow-500 text-yellow-500">
         Notificado
       </Badge>
     );
+
   return <Badge variant="outline">Aguardando</Badge>;
 }
 
@@ -227,15 +263,42 @@ function QueueColumn({
                 : null;
 
               let etaTime: string | null = null;
-              if (isWaiting && client.waitTime) {
-                const now = new Date();
-                const etaDate = new Date(
-                  now.getTime() + client.waitTime * 60000
-                );
-                etaTime = etaDate.toLocaleTimeString('pt-BR', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
+              if (isWaiting) {
+                // Tentar obter horário de início do serviceAllocations
+                const allocations = client.serviceAllocations;
+                let earliestStart: Date | null = null;
+
+                if (allocations) {
+                  ['manicure', 'pedicure', 'brush'].forEach((service) => {
+                    const alloc =
+                      allocations[service as 'manicure' | 'pedicure' | 'brush'];
+                    if (alloc && 'start' in alloc && alloc.start) {
+                      const startTime = new Date(alloc.start);
+                      if (!earliestStart || startTime < earliestStart) {
+                        earliestStart = startTime;
+                      }
+                    }
+                  });
+                }
+
+                // Se tem horário agendado, usar ele
+                if (earliestStart) {
+                  etaTime = earliestStart.toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+                }
+                // Senão, calcular pela waitTime
+                else if (client.waitTime) {
+                  const now = new Date();
+                  const etaDate = new Date(
+                    now.getTime() + client.waitTime * 60000
+                  );
+                  etaTime = etaDate.toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+                }
               }
               // Preparar info de reserva/segundo serviço
               let nextServiceInfo: { label: string; timeStr: string } | null =
