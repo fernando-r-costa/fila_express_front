@@ -104,24 +104,24 @@ function StatusBadge({
   waitingClients: Client[];
 }) {
   // Calcular tempo até o início do atendimento
-  const getMinutesUntilStart = () => {
+  const getMinutesUntilStart = (): number => {
     const allocations = client.serviceAllocations;
     if (!allocations) return Infinity;
 
     // Encontrar o menor horário de início entre todos os serviços
-    let earliestStart: Date | null = null;
-    ['manicure', 'pedicure', 'brush'].forEach((service) => {
-      const alloc = allocations[service as 'manicure' | 'pedicure' | 'brush'];
+    const startTimes: Date[] = [];
+    for (const service of ['manicure', 'pedicure', 'brush'] as const) {
+      const alloc = allocations[service];
       if (alloc && 'start' in alloc && alloc.start) {
-        const startTime = new Date(alloc.start);
-        if (!earliestStart || startTime < earliestStart) {
-          earliestStart = startTime;
-        }
+        startTimes.push(new Date(alloc.start));
       }
-    });
+    }
 
-    if (!earliestStart) return Infinity;
+    if (startTimes.length === 0) return Infinity;
 
+    const earliestStart = new Date(
+      Math.min(...startTimes.map((d) => d.getTime()))
+    );
     const now = new Date();
     const minutesUntilStart = Math.round(
       (earliestStart.getTime() - now.getTime()) / 60000
@@ -131,11 +131,11 @@ function StatusBadge({
 
   const minutesUntilStart = getMinutesUntilStart();
 
-  // Prioridade: Em Atendimento > Próximo (< 10min) > Confirmado > Notificado > Aguardando
+  // Prioridade: Em Atendimento > Próximo (< 10min ou já passou) > Confirmado > Notificado > Aguardando
   if (client.status === 'em_atendimento') return <Badge>Em Atendimento</Badge>;
 
-  // Próximo: menos de 10 minutos para iniciar
-  if (minutesUntilStart <= 10 && minutesUntilStart >= 0)
+  // Próximo: menos de 10 minutos para iniciar OU horário já passou (deveria estar sendo atendido)
+  if (minutesUntilStart <= 10 && minutesUntilStart !== Infinity)
     return <Badge variant="secondary">Próximo</Badge>;
 
   // Confirmado: status confirmed e mais de 10 minutos
@@ -266,23 +266,26 @@ function QueueColumn({
               if (isWaiting) {
                 // Tentar obter horário de início do serviceAllocations
                 const allocations = client.serviceAllocations;
-                let earliestStart: Date | null = null;
+                const startTimes: Date[] = [];
 
                 if (allocations) {
-                  ['manicure', 'pedicure', 'brush'].forEach((service) => {
-                    const alloc =
-                      allocations[service as 'manicure' | 'pedicure' | 'brush'];
+                  for (const service of [
+                    'manicure',
+                    'pedicure',
+                    'brush',
+                  ] as const) {
+                    const alloc = allocations[service];
                     if (alloc && 'start' in alloc && alloc.start) {
-                      const startTime = new Date(alloc.start);
-                      if (!earliestStart || startTime < earliestStart) {
-                        earliestStart = startTime;
-                      }
+                      startTimes.push(new Date(alloc.start));
                     }
-                  });
+                  }
                 }
 
                 // Se tem horário agendado, usar ele
-                if (earliestStart) {
+                if (startTimes.length > 0) {
+                  const earliestStart = new Date(
+                    Math.min(...startTimes.map((d) => d.getTime()))
+                  );
                   etaTime = earliestStart.toLocaleTimeString('pt-BR', {
                     hour: '2-digit',
                     minute: '2-digit',
