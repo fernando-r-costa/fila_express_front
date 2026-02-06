@@ -137,6 +137,7 @@ export default function HomePage() {
         title: 'Erro ao entrar na fila',
         description: 'Não foi possível obter o ID do agendamento.',
         variant: 'destructive',
+        duration: 10000,
       });
     }
   };

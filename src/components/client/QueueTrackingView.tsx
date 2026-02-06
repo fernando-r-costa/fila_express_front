@@ -16,12 +16,10 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { TimeConfirmationView } from './TimeConfirmationView';
 import { Clock, Bell } from 'lucide-react';
 
 type ServiceData = {
@@ -48,6 +46,7 @@ export function QueueTrackingView({
   const [eta, setEta] = useState<string | null>(null);
 
   // Calcular horário previsto baseado no tempo de entrada
+  // Nota: Isso é uma estimativa visual. O backend (relacional) é quem manda a verdade.
   useEffect(() => {
     const now = new Date();
     const etaDate = new Date(now.getTime() + initialTime * 60000);
@@ -63,7 +62,7 @@ export function QueueTrackingView({
     .map(([service]) => service.charAt(0).toUpperCase() + service.slice(1));
 
   return (
-    <form>
+    <div className="flex w-full justify-center">
       <Card className="w-full max-w-sm text-center">
         <CardHeader>
           <CardTitle className="text-2xl">Você está na Fila!</CardTitle>
@@ -128,6 +127,6 @@ export function QueueTrackingView({
           </AlertDialog>
         </CardFooter>
       </Card>
-    </form>
+    </div>
   );
 }

@@ -6,9 +6,11 @@ import {
   useState,
   useEffect,
   ReactNode,
+  useCallback,
 } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '../lib/api';
+import { useToast } from '@/hooks/use-toast'; // Importante para avisar o usuário
 
 interface IAuthContextType {
   isAuthenticated: boolean;
@@ -26,7 +28,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [salonId, setSalonId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const { toast } = useToast(); // Hook para o toast
 
+  // Função de Logout (Centralizada)
+  const logout = useCallback(() => {
+    localStorage.removeItem('authTokenSalao');
+    localStorage.removeItem('salonId');
+    setToken(null);
+    setSalonId(null);
+    delete api.defaults.headers.common['Authorization'];
+    router.push('/admin');
+  }, [router]);
+
+  // Carregar dados iniciais
   useEffect(() => {
     const storedToken = localStorage.getItem('authTokenSalao');
     const storedSalonId = localStorage.getItem('salonId');
@@ -39,39 +53,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = async (
-    adminUser: string,
-    adminPassword: string
-  ): Promise<boolean> => {
-    const response = await api.post('salon/login', {
-      adminUser,
-      adminPassword,
-    });
+  // --- INTERCEPTOR GLOBAL DE ERRO ---
+  // Isso garante que se o token vencer em QUALQUER tela, o usuário vai pro login
+  useEffect(() => {
+    const interceptorId = api.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        const status = error.response?.status;
+        const errorMessage =
+          error.response?.data?.error || error.response?.data?.message || '';
 
-    const { token: newToken } = response.data;
+        // Pega 401 (Padrão) OU 400/403 se a mensagem falar de "token" ou "jwt"
+        const isTokenError =
+          status === 401 ||
+          ((status === 400 || status === 403) &&
+            (errorMessage.toString().toLowerCase().includes('token') ||
+              errorMessage.toString().toLowerCase().includes('jwt') ||
+              errorMessage.toString().toLowerCase().includes('expirado')));
 
-    if (newToken) {
-      const payload = JSON.parse(atob(newToken.split('.')[1]));
-      const newSalonId = payload.salonId;
+        if (isTokenError) {
+          if (token) {
+            // Usa setTimeout para evitar conflito de renderização se estiver no meio de um load
+            setTimeout(() => {
+              logout();
+              toast({
+                title: 'Sessão Expirada',
+                description: 'Sua credencial venceu. Faça login novamente.',
+                variant: 'destructive',
+                duration: 10000,
+              });
+            }, 100);
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
 
-      localStorage.setItem('authTokenSalao', newToken);
-      localStorage.setItem('salonId', String(newSalonId));
-      setToken(newToken);
-      setSalonId(newSalonId);
-      api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
-      return true;
-    }
-    return false;
-  };
+    return () => {
+      api.interceptors.response.eject(interceptorId);
+    };
+  }, [logout, token, toast]);
 
-  const logout = () => {
-    localStorage.removeItem('authTokenSalao');
-    localStorage.removeItem('salonId');
-    setToken(null);
-    setSalonId(null);
-    delete api.defaults.headers.common['Authorization'];
-    router.push('/admin');
-  };
+  const login = useCallback(
+    async (adminUser: string, adminPassword: string): Promise<boolean> => {
+      try {
+        const response = await api.post('salon/login', {
+          adminUser,
+          adminPassword,
+        });
+
+        const { token: newToken } = response.data;
+
+        if (newToken) {
+          const payload = JSON.parse(atob(newToken.split('.')[1]));
+          const newSalonId = payload.salonId || payload.id;
+
+          if (!newSalonId) {
+            console.error('ID do salão não encontrado no token.');
+            return false;
+          }
+
+          localStorage.setItem('authTokenSalao', newToken);
+          localStorage.setItem('salonId', String(newSalonId));
+          setToken(newToken);
+          setSalonId(Number(newSalonId));
+          api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+          return true;
+        }
+        return false;
+      } catch (error) {
+        console.error('Erro no login:', error);
+        return false;
+      }
+    },
+    []
+  );
 
   const value = {
     isAuthenticated: !!token,

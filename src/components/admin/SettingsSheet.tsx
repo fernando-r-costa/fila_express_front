@@ -28,6 +28,13 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
   const [manicureAvgTime, setManicureAvgTime] = useState(30);
   const [pedicureAvgTime, setPedicureAvgTime] = useState(50);
   const [brushAvgTime, setBrushAvgTime] = useState(60);
+  const [restMinutes, setRestMinutes] = useState(10);
+  const [bufferMinutes, setBufferMinutes] = useState(10);
+  const [maxOffsetMinutes, setMaxOffsetMinutes] = useState(10);
+  const [lunchStartTime, setLunchStartTime] = useState('');
+  const [lunchEndTime, setLunchEndTime] = useState('');
+  const [lunchDurationMinutes, setLunchDurationMinutes] = useState(60);
+  const [aiName, setAiName] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   const timeToMinutes = (t: string) => {
@@ -47,6 +54,9 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     }
     if (manicureAvgTime <= 0 || pedicureAvgTime <= 0 || brushAvgTime <= 0) {
       return 'Durações médias devem ser maiores que zero.';
+    }
+    if (restMinutes < 0 || bufferMinutes < 0 || maxOffsetMinutes < 0) {
+      return 'Rest, buffer e offset não podem ser negativos.';
     }
     return null;
   };
@@ -91,6 +101,27 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
         if (Number.isFinite(Number(data.brushAvgTime))) {
           setBrushAvgTime(Number(data.brushAvgTime));
         }
+        if (Number.isFinite(Number(data.restMinutes))) {
+          setRestMinutes(Number(data.restMinutes));
+        }
+        if (Number.isFinite(Number(data.bufferMinutes))) {
+          setBufferMinutes(Number(data.bufferMinutes));
+        }
+        if (Number.isFinite(Number(data.maxOffsetMinutes))) {
+          setMaxOffsetMinutes(Number(data.maxOffsetMinutes));
+        }
+        if (typeof data.lunchStartTime === 'string' && data.lunchStartTime) {
+          setLunchStartTime(data.lunchStartTime);
+        }
+        if (typeof data.lunchEndTime === 'string' && data.lunchEndTime) {
+          setLunchEndTime(data.lunchEndTime);
+        }
+        if (Number.isFinite(Number(data.lunchDurationMinutes))) {
+          setLunchDurationMinutes(Number(data.lunchDurationMinutes));
+        }
+        if (typeof data.aiName === 'string' && data.aiName) {
+          setAiName(data.aiName);
+        }
       } catch (err) {
         // Silencioso; o dashboard exibirá toasts se necessário
         // Poderíamos adicionar um pequeno aviso local aqui se quisermos
@@ -116,6 +147,13 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
       manicureAvgTime,
       pedicureAvgTime,
       brushAvgTime,
+      restMinutes,
+      bufferMinutes,
+      maxOffsetMinutes,
+      lunchStartTime: lunchStartTime || null,
+      lunchEndTime: lunchEndTime || null,
+      lunchDurationMinutes: lunchDurationMinutes || null,
+      aiName: aiName.trim() || 'Inteligência Artificial',
     };
     onSave(newSettings);
     setIsLoading(false);
@@ -159,11 +197,9 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
                   setMpStrategy(e.target.value as 'optimized' | 'always_two')
                 }
               >
-                <option value="optimized">
-                  Liberar 1 atendente (1 faz Mani+Pedi)
-                </option>
+                <option value="optimized">1 atendente Mani+Pedi</option>
                 <option value="always_two">
-                  Sempre 2 atendentes (Mani e Pedi)
+                  2 atendentes (1 Mani e 1 Pedi)
                 </option>
               </select>
             </div>
@@ -273,6 +309,110 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
                   onChange={(e) => setBrushAvgTime(Number(e.target.value))}
                 />
               </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-lg font-medium">Tempos Operacionais (min)</h3>
+            <Separator className="my-4" />
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="rest-minutes">Descanso entre clientes</Label>
+                <Input
+                  id="rest-minutes"
+                  type="number"
+                  min="0"
+                  value={restMinutes}
+                  onChange={(e) => setRestMinutes(Number(e.target.value))}
+                />
+              </div>
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="buffer-minutes">Tempo de chegada</Label>
+                <Input
+                  id="buffer-minutes"
+                  type="number"
+                  min="0"
+                  value={bufferMinutes}
+                  onChange={(e) => setBufferMinutes(Number(e.target.value))}
+                />
+              </div>
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="offset-minutes">
+                  Defasagem máxima (escova x unhas)
+                </Label>
+                <Input
+                  id="offset-minutes"
+                  type="number"
+                  min="0"
+                  value={maxOffsetMinutes}
+                  onChange={(e) => setMaxOffsetMinutes(Number(e.target.value))}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-lg font-medium">Horário de Almoço</h3>
+            <Separator className="my-4" />
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="lunch-start">Início do Almoço</Label>
+                <Input
+                  id="lunch-start"
+                  type="time"
+                  value={lunchStartTime}
+                  onChange={(e) => setLunchStartTime(e.target.value)}
+                  placeholder="Ex: 12:00"
+                />
+              </div>
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="lunch-end">Fim do Almoço</Label>
+                <Input
+                  id="lunch-end"
+                  type="time"
+                  value={lunchEndTime}
+                  onChange={(e) => setLunchEndTime(e.target.value)}
+                  placeholder="Ex: 14:00"
+                />
+              </div>
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="lunch-duration">Duração do Almoço (min)</Label>
+                <Input
+                  id="lunch-duration"
+                  type="number"
+                  min="0"
+                  value={lunchDurationMinutes}
+                  onChange={(e) =>
+                    setLunchDurationMinutes(Number(e.target.value))
+                  }
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Quando um atendimento termina dentro do horário de almoço, o
+                tempo de descanso do atendente será substituído pela duração do
+                almoço configurada acima.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-lg font-medium">Identificação da IA</h3>
+            <Separator className="my-4" />
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="ai-name">Nome da IA</Label>
+                <Input
+                  id="ai-name"
+                  type="text"
+                  placeholder="Inteligência Artificial"
+                  value={aiName}
+                  onChange={(e) => setAiName(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Nome exibido para os clientes ao buscar horários. Deixe em
+                branco para usar o padrão.
+              </p>
             </div>
           </div>
         </div>

@@ -1,3 +1,20 @@
+/*
+ * =========================================================================
+ * � QUEUE TRACKING PAGE - RELACIONAL COMPLETO
+ * =========================================================================
+ *
+ * Página de rastreamento em tempo real do agendamento.
+ *
+ * Fluxos:
+ * 1. Fila Ativa: Exibe tempo restante e posição com polling a cada 30s
+ * 2. Notificado/Próximo: Exibe TimeConfirmationView para confirmar presença
+ * 3. Confirmado: Exibe horário final do atendimento
+ * 4. Finalizado: Redireciona para home
+ *
+ * Dados extraídos de appointment.services[0].estimatedStart para ETA
+ * =========================================================================
+ */
+
 'use client';
 
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
@@ -50,12 +67,43 @@ export default function QueuePage() {
     return envVar ? Number(envVar) : undefined;
   }, []);
 
-  const mapServicesFromBackend = (servicesRequested: string[]) => {
-    return {
-      manicure: servicesRequested.includes('manicure'),
-      pedicure: servicesRequested.includes('pedicure'),
-      escova: servicesRequested.includes('brush'),
-    };
+  // --- LÓGICA DE MAPEAMENTO HÍBRIDA (NOVO + LEGADO) ---
+  const mapServicesFromBackend = (appointmentData: any) => {
+    const servicesMap = { manicure: false, pedicure: false, escova: false };
+    let serviceNames: string[] = [];
+
+    // Cenário 1: Backend Novo (Relacional) -> services: [{ serviceName: 'brush' }, ...]
+    if (Array.isArray(appointmentData.services)) {
+      serviceNames = appointmentData.services.map((s: any) => s.serviceName);
+    }
+    // Cenário 2: Backend Legado ou Simplificado -> servicesRequested: ['brush', ...]
+    else if (Array.isArray(appointmentData.servicesRequested)) {
+      serviceNames = appointmentData.servicesRequested;
+    }
+
+    if (serviceNames.includes('manicure')) servicesMap.manicure = true;
+    if (serviceNames.includes('pedicure')) servicesMap.pedicure = true;
+    if (serviceNames.includes('brush') || serviceNames.includes('escova'))
+      servicesMap.escova = true;
+
+    return servicesMap;
+  };
+
+  // Helper para pegar o primeiro serviço SOLICITADO (ignora not_requested)
+  const getFirstRequestedService = (appointment: any) => {
+    if (!appointment.services || !Array.isArray(appointment.services)) {
+      return null;
+    }
+    const requested = appointment.services.filter(
+      (s: any) => s.status !== 'not_requested' && s.status !== 'cancelled'
+    );
+    if (requested.length === 0) return null;
+    // Retorna o serviço com menor estimatedStart
+    return requested.reduce((earliest: any, current: any) => {
+      const earliestStart = new Date(earliest.estimatedStart).getTime();
+      const currentStart = new Date(current.estimatedStart).getTime();
+      return currentStart < earliestStart ? current : earliest;
+    });
   };
 
   const handleFinalConfirmation = useCallback(
@@ -66,40 +114,55 @@ export default function QueuePage() {
           title: 'Dados insuficientes',
           description: 'Não foi possível obter seu telefone para confirmar.',
           variant: 'destructive',
+          duration: 10000,
+        });
+        return;
+      }
+
+      // Bloqueia confirmação se já em atendimento
+      if (isConfirmedRef.current) {
+        toast({
+          title: 'Operação não permitida',
+          description:
+            'Seu agendamento já foi confirmado ou está em andamento.',
+          variant: 'destructive',
+          duration: 10000,
         });
         return;
       }
 
       try {
-        const response = await api.patch(
-          `/appointments/${appointmentId}/confirm`,
-          {
-            clientPhone: phone,
-          }
-        );
+        await api.patch(`/appointments/${appointmentId}/confirm`, {
+          clientPhone: phone,
+        });
 
-        // Buscar o agendamento atualizado usando a rota pública
-        const { data: trackingData } = await api.get(
-          `/appointments/${appointmentId}/track`
-        );
-
-        if (trackingData?.startTimeSlot) {
-          // Usar o horário do backend
-          const etaDate = new Date(trackingData.startTimeSlot);
-          const formattedEta = etaDate.toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-          setData((prev) =>
-            prev ? ({ ...prev, confirmedEta: formattedEta } as any) : null
+        // Tenta buscar atualização
+        try {
+          const { data: trackingData } = await api.get(
+            `/appointments/${appointmentId}/track`
           );
-        } else {
-          setFinalTime(currentTime); // Fallback
+          const firstService = getFirstRequestedService(trackingData);
+          if (firstService) {
+            const etaDate = new Date(firstService.estimatedStart);
+            const formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            setData((prev) =>
+              prev ? ({ ...prev, confirmedEta: formattedEta } as any) : null
+            );
+          } else {
+            setFinalTime(currentTime);
+          }
+        } catch (e) {
+          // Se falhar o track, usa o tempo local
+          setFinalTime(currentTime);
         }
 
         toast({
           title: 'Presença confirmada!',
           description: 'Obrigado! Até já.',
+          duration: 10000,
         });
         setIsConfirmed(true);
       } catch (error) {
@@ -112,216 +175,158 @@ export default function QueuePage() {
           title: 'Confirmação não concluída',
           description: errorMessage,
           variant: 'destructive',
+          duration: 10000,
         });
       }
     },
     [appointmentId, toast]
   );
 
-  // Confirmação automática quando tempo <= 20 minutos
-  const handleAutoConfirmation = useCallback(
-    async (currentTime: number, clientPhone: string) => {
-      console.log('[QueuePage] Iniciando confirmação automática');
-      await handleFinalConfirmation(currentTime, clientPhone);
-    },
-    [handleFinalConfirmation]
-  );
-
   const fetchData = useCallback(async () => {
-    console.log('[QueuePage] fetchData iniciado', {
-      appointmentId,
-      isConfirmed: isConfirmedRef.current,
-    });
-
-    if (Number.isNaN(appointmentId)) {
-      console.log('[QueuePage] ID inválido', { appointmentId });
-      toast({
-        title: 'ID inválido',
-        description: 'O link do agendamento está incorreto.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Não buscar se já confirmou
-    if (isConfirmedRef.current) {
-      console.log('[QueuePage] Já confirmado, não busca mais');
-      return;
-    }
+    if (Number.isNaN(appointmentId)) return;
+    if (isConfirmedRef.current) return;
 
     try {
-      console.log(
-        '[QueuePage] Buscando agendamento...',
-        `/appointments/${appointmentId}/track`
-      );
       const { data: appointment } = await api.get(
         `/appointments/${appointmentId}/track`
       );
-      console.log('[QueuePage] Agendamento recebido', appointment);
 
-      // Se o agendamento foi finalizado ou cancelado, redireciona para home
+      // Tratamento para status de finalização
       if (['finished', 'cancelled', 'no_show'].includes(appointment.status)) {
-        console.log(
-          '[QueuePage] Agendamento não está mais ativo',
-          appointment.status
-        );
         toast({
           title: 'Agendamento finalizado',
           description: 'Este agendamento já foi concluído ou cancelado.',
-          variant: 'default',
+          duration: 10000,
         });
         router.push('/');
         return;
       }
 
-      // Se já está confirmado no backend, mostrar tela de confirmação
-      if (appointment.status === 'confirmed' && !isConfirmedRef.current) {
-        console.log('[QueuePage] Agendamento já confirmado no backend');
-        const etaDate = new Date(appointment.startTimeSlot);
-        const formattedEta = etaDate.toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
+      // Bloqueia confirmação se já em atendimento
+      if (appointment.status === 'in_progress' && !isConfirmedRef.current) {
+        toast({
+          title: 'Agendamento em andamento',
+          description:
+            'Seu atendimento já foi iniciado. Não é possível confirmar novamente.',
+          duration: 10000,
         });
-
-        // Criar dados completos com confirmedEta
-        const tracking: TrackingData = {
-          initialTime: Number(appointment.remainingTime ?? 0),
-          initialPosition: appointment.position ?? null,
-          serviceData: mapServicesFromBackend(
-            appointment.servicesRequested || []
-          ),
-          clientPhone: appointment.clientPhone || '',
-          notified: appointment.notified ?? false,
-          confirmedEta: formattedEta,
-        };
-
-        setData(tracking);
         setIsConfirmed(true);
         return;
       }
 
-      const tracking: TrackingData = {
-        initialTime: Number(appointment.remainingTime ?? 0),
-        initialPosition: appointment.position ?? null,
-        serviceData: mapServicesFromBackend(
-          appointment.servicesRequested || []
+      // Mapeia serviços usando a nova função híbrida
+      const servicesMapped = mapServicesFromBackend(appointment);
+
+      // Se já confirmado
+      if (appointment.status === 'confirmed' && !isConfirmedRef.current) {
+        let formattedEta = '';
+
+        // Pega o primeiro estimatedStart dos serviços SOLICITADOS
+        const firstService = getFirstRequestedService(appointment);
+        if (firstService) {
+          const etaDate = new Date(firstService.estimatedStart);
+          formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+        }
+
+        setData({
+          initialTime: Number(
+            appointment.remainingTime ?? appointment.waitTimeMinutes ?? 0
+          ),
+          initialPosition: appointment.position ?? null,
+          serviceData: servicesMapped,
+          clientPhone: appointment.clientPhone || '',
+          notified: appointment.notified ?? false,
+          confirmedEta: formattedEta,
+        });
+        setIsConfirmed(true);
+        return;
+      }
+
+      // Dados normais de fila
+      let formattedEta = undefined;
+      if (appointment.notified) {
+        const firstService = getFirstRequestedService(appointment);
+        if (firstService) {
+          const etaDate = new Date(firstService.estimatedStart);
+          formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+        }
+      }
+
+      setData({
+        initialTime: Number(
+          appointment.remainingTime ?? appointment.waitTimeMinutes ?? 0
         ),
+        initialPosition: appointment.position ?? null,
+        serviceData: servicesMapped,
         clientPhone: appointment.clientPhone || '',
         notified: appointment.notified ?? false,
-      };
-      setData(tracking);
-
-      // Se tempo <= 20 minutos, confirma automaticamente
-      if (tracking.initialTime <= 20 && !isConfirmedRef.current) {
-        console.log('[QueuePage] Tempo <= 20 min, confirmando automaticamente');
-        // Chamar diretamente handleFinalConfirmation para evitar dependência circular
-        await handleFinalConfirmation(
-          tracking.initialTime,
-          tracking.clientPhone
-        );
-      }
-    } catch (error) {
+        confirmedEta: formattedEta,
+      });
+      // Sucesso - sem erros
+    } catch (error: any) {
       console.error('Erro ao buscar agendamento:', error);
+
       toast({
         title: 'Falha ao carregar',
-        description: 'Agendamento não foi encontrado.',
+        description: 'Agendamento não encontrado ou erro de conexão.',
         variant: 'destructive',
+        duration: 10000,
       });
     }
-  }, [appointmentId, toast, router, handleFinalConfirmation]);
+  }, [appointmentId, toast, router]);
 
   useEffect(() => {
-    console.log('[QueuePage] useEffect montado - carregando dados iniciais');
     const loadInitialData = async () => {
       setIsLoading(true);
       await fetchData();
       setIsLoading(false);
     };
-
     loadInitialData();
 
-    // Polling a cada 30 segundos para atualizar o tempo estimado
-    // O tempo é recalculado no backend toda vez que chama o próximo
-    // Para quando o cliente confirma presença
     const intervalId = setInterval(() => {
       if (!isConfirmedRef.current) {
-        console.log('[QueuePage] Polling - atualizando dados da fila');
         fetchData();
       } else {
-        console.log(
-          '[QueuePage] Polling cancelado - cliente já confirmou presença'
-        );
         clearInterval(intervalId);
       }
-    }, 30000); // 30 segundos
+    }, 30000);
 
-    return () => {
-      console.log('[QueuePage] Limpando interval de polling');
-      clearInterval(intervalId);
-    };
+    return () => clearInterval(intervalId);
   }, [fetchData]);
 
   const handleCancel = async () => {
-    console.log('[QueuePage] handleCancel chamado', {
-      appointmentId,
-      hasData: !!data,
-      clientPhone: data?.clientPhone,
-    });
-
-    if (!data?.clientPhone) {
-      console.log('[QueuePage] Cancelamento bloqueado - sem telefone');
-      toast({
-        title: 'Dados insuficientes',
-        description: 'Não foi possível obter seu telefone para cancelar.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
+    if (!data?.clientPhone) return;
     try {
-      console.log('[QueuePage] Enviando requisição de cancelamento', {
-        url: `/appointments/${appointmentId}/remove`,
-        data: {
-          reason: 'cancelled',
-          clientPhone: data.clientPhone,
-        },
+      await api.patch(`/appointments/${appointmentId}/remove`, {
+        reason: 'cancelled',
+        clientPhone: data.clientPhone,
       });
-
-      const response = await api.patch(
-        `/appointments/${appointmentId}/remove`,
-        {
-          reason: 'cancelled',
-          clientPhone: data.clientPhone,
-        }
-      );
-
-      console.log('[QueuePage] Cancelamento bem-sucedido', response.data);
-
       toast({
         title: 'Atendimento cancelado',
         description: 'Você saiu da fila.',
+        duration: 10000,
       });
       router.push('/');
-    } catch (error) {
-      console.error('[QueuePage] Erro ao cancelar:', error);
-      console.error('[QueuePage] Detalhes do erro:', {
-        response: (error as any).response,
-        message: (error as any).message,
-      });
-
-      const errorMessage =
-        (error as any).response?.data?.error ||
-        (error as any).response?.data?.message ||
-        'Não foi possível cancelar. Tente novamente mais tarde ou no salão.';
+    } catch (error: any) {
+      const msg = error.response?.data?.error || 'Erro ao cancelar';
       toast({
-        title: 'Não foi possível cancelar',
-        description: errorMessage,
+        title: 'Erro',
+        description: msg,
         variant: 'destructive',
+        duration: 10000,
       });
     }
   };
 
-  if (isLoading || !data) {
+  // --- RENDERIZAÇÃO ---
+
+  if (isLoading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center py-10 text-secondary">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -330,14 +335,11 @@ export default function QueuePage() {
     );
   }
 
-  if (isConfirmed) {
-    let formattedEta: string | null = null;
+  if (!data) return null;
 
-    // Priorizar o horário do backend (confirmedEta)
-    if (data?.confirmedEta) {
-      formattedEta = data.confirmedEta;
-    } else if (finalTime !== null) {
-      // Fallback: calcular localmente
+  if (isConfirmed) {
+    let formattedEta = data.confirmedEta;
+    if (!formattedEta && finalTime !== null) {
       const now = new Date();
       const etaDate = new Date(now.getTime() + finalTime * 60000);
       formattedEta = etaDate.toLocaleTimeString('pt-BR', {
@@ -353,21 +355,14 @@ export default function QueuePage() {
             <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
             <CardTitle>Presença Confirmada!</CardTitle>
             <CardDescription>
-              Obrigado!
-              <br /> Pode se dirigir ao salão.
-              <br />
-              Estamos aguardando você.
+              Obrigado! Pode se dirigir ao salão.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4">
-            <p className="text-lg">
-              Seu atendimento está
-              <br />
-              confirmado para
-              <br />
-              aproximadamente:
+          <CardContent>
+            <p className="text-lg">Seu atendimento está confirmado para:</p>
+            <p className="text-5xl font-bold text-primary">
+              {formattedEta || '--:--'}
             </p>
-            <p className="text-5xl font-bold text-primary">{formattedEta}</p>
           </CardContent>
         </Card>
       </div>
@@ -377,7 +372,7 @@ export default function QueuePage() {
   return (
     <div className="flex flex-col items-center justify-center">
       <div className="p-4">
-        {data.initialTime > 20 && data.initialTime <= 30 ? (
+        {data.notified || (data.initialTime > 20 && data.initialTime <= 30) ? (
           <TimeConfirmationView
             remainingTime={data.initialTime}
             onConfirm={() =>
