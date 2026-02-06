@@ -11,7 +11,7 @@ const sqindra = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'Amauty Alves',
+  title: 'Amaury Alves',
   description: 'Sua fila de beleza virtual',
 };
 
