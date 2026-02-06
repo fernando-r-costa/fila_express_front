@@ -11,7 +11,7 @@ const sqindra = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'Salão Express',
+  title: 'Amauty Alves',
   description: 'Sua fila de beleza virtual',
 };
 
