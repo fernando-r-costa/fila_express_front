@@ -74,7 +74,11 @@ export default function QueuePage() {
 
     // Cenário 1: Backend Novo (Relacional) -> services: [{ serviceName: 'brush' }, ...]
     if (Array.isArray(appointmentData.services)) {
-      serviceNames = appointmentData.services.map((s: any) => s.serviceName);
+      serviceNames = appointmentData.services
+        .filter(
+          (s: any) => s.status !== 'not_requested' && s.status !== 'cancelled'
+        )
+        .map((s: any) => s.serviceName);
     }
     // Cenário 2: Backend Legado ou Simplificado -> servicesRequested: ['brush', ...]
     else if (Array.isArray(appointmentData.servicesRequested)) {
