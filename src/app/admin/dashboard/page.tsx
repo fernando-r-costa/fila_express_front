@@ -23,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { formatBrazilPhone } from '@/lib/utils';
 import {
   Table,
   TableBody,
@@ -419,7 +420,7 @@ function QueueColumn({
                     {client.phone && (
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Phone className="h-3 w-3" />
-                        <span>{client.phone}</span>
+                        <span>{formatBrazilPhone(client.phone)}</span>
                       </div>
                     )}
                     <div className="text-xs text-muted-foreground">

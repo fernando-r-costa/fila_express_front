@@ -50,6 +50,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/lib/api';
 import Link from 'next/link';
+import { formatBrazilPhone } from '@/lib/utils';
 
 // Tipagem Híbrida (Suporta legado e novo)
 type CompletedAppointment = {
@@ -319,7 +320,7 @@ export default function ReportsPage() {
                       <TableCell>
                         <div className="font-medium">{item.clientName}</div>
                         <div className="text-xs text-muted-foreground">
-                          {item.clientPhone}
+                          {formatBrazilPhone(item.clientPhone)}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           {item.clientEmail}
@@ -389,7 +390,7 @@ export default function ReportsPage() {
                       <TableCell>
                         <div className="font-medium">{item.clientName}</div>
                         <div className="text-xs text-muted-foreground">
-                          {item.clientPhone}
+                          {formatBrazilPhone(item.clientPhone)}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           {item.clientEmail}

@@ -28,6 +28,7 @@ import { TimeEstimateView } from '@/components/client/TimeEstimateView';
 import { AILoadingState } from '@/components/client/AILoadingState';
 import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { useRouter } from 'next/navigation';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
@@ -66,6 +67,7 @@ export function ClientSignUpFlow({
     'Inteligência Artificial'
   );
   const { toast } = useToast();
+  const router = useRouter();
 
   const mapServicesToBackend = (services: ServiceData): string[] => {
     const mapped: string[] = [];
@@ -109,6 +111,7 @@ export function ClientSignUpFlow({
         servicesRequested,
         clientName: clientData?.name,
         clientPhone: clientData?.phone,
+        clientEmail: clientData?.email,
       });
 
       if (
@@ -153,6 +156,20 @@ export function ClientSignUpFlow({
       ) {
         errorMessage =
           'Servidor ocupado. A fila de atendimento está sendo processada. Aguarde alguns segundos e tente novamente.';
+      } else if ((error as any).response?.status === 409) {
+        const pendingId = (error as any).response?.data?.appointmentId;
+        errorMessage =
+          (error as any).response?.data?.error ||
+          'Você já possui um atendimento em andamento. Abrindo o rastreamento.';
+        if (pendingId) {
+          toast({
+            title: 'Atendimento pendente encontrado',
+            description: 'Você já possui um atendimento em andamento.',
+            duration: 10000,
+          });
+          router.push(`/fila/${pendingId}`);
+          return;
+        }
       } else if ((error as any).response?.status === 500) {
         errorMessage = 'Erro no servidor. Tente novamente em alguns segundos.';
       } else if ((error as any).response?.status === 400) {
