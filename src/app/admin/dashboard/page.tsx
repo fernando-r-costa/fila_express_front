@@ -45,8 +45,20 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   UserPlus,
   Trash2,
@@ -97,6 +109,7 @@ type Client = {
     meta?: { offsetAllowanceMinutes?: number; reservations?: any[] };
   };
   finishedServices?: string[];
+  doingServices?: string[];
 };
 type QueueType = 'manicure_pedicure' | 'escova';
 
@@ -664,6 +677,13 @@ export default function DashboardPage() {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSettingsSheetOpen, setIsSettingsSheetOpen] = useState(false);
   const [isCallingNext, setIsCallingNext] = useState<QueueType | null>(null);
+  const [isCallNextDialogOpen, setIsCallNextDialogOpen] = useState(false);
+  const [callNextQueueType, setCallNextQueueType] = useState<QueueType | null>(
+    null
+  );
+  const [callNextClientId, setCallNextClientId] = useState('');
+  const [callNextServices, setCallNextServices] = useState<string[]>([]);
+  const [callNextError, setCallNextError] = useState<string | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [pendingRequests, setPendingRequests] = useState(0);
   const [aiPendingRequests, setAiPendingRequests] = useState(0);
@@ -730,19 +750,53 @@ export default function DashboardPage() {
     return c.services.includes('manicure') || c.services.includes('pedicure');
   };
 
+  const serviceLabelMap: Record<string, string> = {
+    manicure: 'Manicure',
+    pedicure: 'Pedicure',
+    brush: 'Escova',
+  };
+
+  const getPendingServicesForClient = (
+    client: Client,
+    queueType: QueueType
+  ) => {
+    const poolServices =
+      queueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
+    const finished = client.finishedServices || [];
+    const doing = client.doingServices || [];
+
+    return poolServices.filter((service) => {
+      const alloc =
+        client.serviceAllocations?.[
+          service as keyof typeof client.serviceAllocations
+        ];
+      const isRequested = !!alloc;
+      const isFinished = finished.includes(service);
+      const isDoing = doing.includes(service);
+      return isRequested && !isFinished && !isDoing;
+    });
+  };
+
   const poolHasPendingService = (c: Client, queueType: QueueType) => {
     const poolServices =
       queueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
     const finished = c.finishedServices || [];
+    const doing = c.doingServices || [];
 
     return poolServices.some((service) => {
       const alloc =
         c.serviceAllocations?.[service as keyof typeof c.serviceAllocations];
       const isRequested = !!alloc;
       const isFinished = finished.includes(service);
-      return isRequested && !isFinished;
+      const isDoing = doing.includes(service);
+      return isRequested && !isFinished && !isDoing;
     });
   };
+
+  const isEligibleForCallNext = (c: Client, queueType: QueueType) =>
+    (c.confirmed || c.status === 'em_atendimento') &&
+    belongsToQueue(c, queueType) &&
+    poolHasPendingService(c, queueType);
 
   // --- MAPPER CRUCIAL (Híbrido) ---
   const mapApiDataToClient = (apiData: any): Client => {
@@ -813,10 +867,13 @@ export default function DashboardPage() {
 
     // Construir array de serviços finalizados baseado no status 'done'
     const finishedServices: string[] = [];
+    const doingServices: string[] = [];
     if (Array.isArray(apiData.services)) {
       apiData.services.forEach((s: any) => {
         if (s.status === 'done') {
           finishedServices.push(s.serviceName);
+        } else if (s.status === 'doing') {
+          doingServices.push(s.serviceName);
         }
       });
     }
@@ -834,6 +891,7 @@ export default function DashboardPage() {
       notified: apiData.notified || false,
       serviceAllocations: finalAllocations, // Agora sempre populado
       finishedServices: finishedServices,
+      doingServices: doingServices,
     };
   };
 
@@ -925,6 +983,23 @@ export default function DashboardPage() {
   }, [isAuthenticated, salonId, fetchQueueData]);
 
   useEffect(() => {
+    if (!isCallNextDialogOpen || !callNextQueueType) return;
+
+    const eligible = queueData.filter((client) =>
+      isEligibleForCallNext(client, callNextQueueType)
+    );
+
+    const defaultClient = eligible[0];
+    setCallNextClientId(defaultClient?.id ?? '');
+    setCallNextServices(
+      defaultClient
+        ? getPendingServicesForClient(defaultClient, callNextQueueType)
+        : []
+    );
+    setCallNextError(null);
+  }, [isCallNextDialogOpen, callNextQueueType, queueData]);
+
+  useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       router.push('/admin');
     }
@@ -1013,26 +1088,44 @@ export default function DashboardPage() {
 
   const handleCallNext = async (queueType: QueueType) => {
     if (!salonId) return;
-    const eligibleClients = queueData.filter(
-      (c) => belongsToQueue(c, queueType) && poolHasPendingService(c, queueType)
+    const eligibleClients = queueData.filter((client) =>
+      isEligibleForCallNext(client, queueType)
     );
     if (eligibleClients.length === 0) {
       toast({
-        title: 'Fila Vazia',
-        description: 'Não há clientes aguardando.',
+        title: 'Sem Confirmadas',
+        description: 'Não há clientes confirmadas para este pool.',
         duration: 10000,
       });
       return;
     }
 
-    setIsCallingNext(queueType);
+    setCallNextQueueType(queueType);
+    setIsCallNextDialogOpen(true);
+  };
+
+  const handleCallNextSubmit = async () => {
+    if (!salonId || !callNextQueueType) return;
+    if (!callNextClientId) {
+      setCallNextError('Selecione uma cliente confirmada.');
+      return;
+    }
+
+    if (callNextServices.length === 0) {
+      setCallNextError('Selecione pelo menos um serviço para chamar.');
+      return;
+    }
+
+    setIsCallingNext(callNextQueueType);
     try {
       startRequest();
       const backendQueueType =
-        queueType === 'escova' ? 'brush' : 'manicure_pedicure';
+        callNextQueueType === 'escova' ? 'brush' : 'manicure_pedicure';
       const response = await api.post('/call-next', {
         salonId,
         queueType: backendQueueType,
+        appointmentId: Number(callNextClientId),
+        services: callNextServices,
       });
       await fetchQueueData();
       const clientName = response.data?.client?.clientName || 'Cliente';
@@ -1041,8 +1134,10 @@ export default function DashboardPage() {
         description: `${clientName} foi chamada para o atendimento.`,
         duration: 10000,
       });
+      setIsCallNextDialogOpen(false);
     } catch (error: any) {
       const msg = error.response?.data?.error || 'Erro ao chamar';
+      setCallNextError(msg);
       toast({
         title: 'Erro',
         description: msg,
@@ -1220,8 +1315,136 @@ export default function DashboardPage() {
     }
   };
 
+  const confirmedClientsForCallNext = callNextQueueType
+    ? queueData.filter((client) =>
+        isEligibleForCallNext(client, callNextQueueType)
+      )
+    : [];
+
+  const selectedCallNextClient = confirmedClientsForCallNext.find(
+    (client) => client.id === callNextClientId
+  );
+
+  const availableCallNextServices =
+    selectedCallNextClient && callNextQueueType
+      ? getPendingServicesForClient(selectedCallNextClient, callNextQueueType)
+      : [];
+
+  const handleCallNextClientToggle = (clientId: string) => {
+    const nextId = callNextClientId === clientId ? '' : clientId;
+    setCallNextClientId(nextId);
+    const nextClient = confirmedClientsForCallNext.find(
+      (client) => client.id === nextId
+    );
+    setCallNextServices(
+      nextClient && callNextQueueType
+        ? getPendingServicesForClient(nextClient, callNextQueueType)
+        : []
+    );
+    setCallNextError(null);
+  };
+
+  const handleCallNextServiceToggle = (serviceName: string) => {
+    setCallNextServices((current) => {
+      const hasService = current.includes(serviceName);
+      return hasService
+        ? current.filter((service) => service !== serviceName)
+        : [...current, serviceName];
+    });
+    setCallNextError(null);
+  };
+
   return (
     <TooltipProvider>
+      <AlertDialog
+        open={isCallNextDialogOpen}
+        onOpenChange={(open) => {
+          setIsCallNextDialogOpen(open);
+          if (!open) {
+            setCallNextQueueType(null);
+            setCallNextClientId('');
+            setCallNextServices([]);
+            setCallNextError(null);
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Chamar proxima cliente</AlertDialogTitle>
+            <AlertDialogDescription>
+              Selecione a cliente confirmada e quais servicos serao iniciados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="call-next-client">Cliente confirmada</Label>
+              {confirmedClientsForCallNext.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
+                  Nenhuma cliente confirmada
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {confirmedClientsForCallNext.map((client) => (
+                    <label
+                      key={client.id}
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      <Checkbox
+                        checked={callNextClientId === client.id}
+                        onCheckedChange={() =>
+                          handleCallNextClientToggle(client.id)
+                        }
+                      />
+                      <span>{client.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="call-next-services">Servicos</Label>
+              {availableCallNextServices.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
+                  Selecione uma cliente para ver os servicos.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {availableCallNextServices.map((service) => (
+                    <label
+                      key={service}
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      <Checkbox
+                        checked={callNextServices.includes(service)}
+                        onCheckedChange={() =>
+                          handleCallNextServiceToggle(service)
+                        }
+                      />
+                      <span>{serviceLabelMap[service] || service}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            {callNextError && (
+              <p className="text-sm text-destructive">{callNextError}</p>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCallNextSubmit}
+              disabled={
+                confirmedClientsForCallNext.length === 0 ||
+                callNextServices.length === 0 ||
+                isCallingNext === callNextQueueType
+              }
+            >
+              {isCallingNext === callNextQueueType ? 'Chamando...' : 'Chamar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="flex h-full min-h-0 flex-1 flex-col gap-4 overflow-hidden px-4 pb-4 pt-2 md:gap-6 md:px-8 md:pb-8 md:pt-3">
         <div className="flex h-auto min-h-[56px] flex-shrink-0 flex-wrap items-center justify-between gap-4 border-b border-white/10 py-2">
           <h1 className="my-0 flex items-center gap-2 px-4 py-1 text-2xl font-bold uppercase leading-none text-secondary">
