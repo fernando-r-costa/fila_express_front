@@ -260,8 +260,8 @@ export default function ReportsPage() {
                 }
               >
                 <option value="all">Todos</option>
-                <option value="cancelled">Cancelado</option>
-                <option value="no_show">Não compareceu</option>
+                <option value="cancelled">CANCELADO</option>
+                <option value="no_show">NO SHOW</option>
               </select>
             </div>
           )}
@@ -290,9 +290,7 @@ export default function ReportsPage() {
                   {' '}
                   · Status:{' '}
                   <span className="font-bold">
-                    {cancelStatus === 'no_show'
-                      ? 'Não compareceu'
-                      : 'Cancelado'}
+                    {cancelStatus === 'no_show' ? 'NO SHOW' : 'CANCELADO'}
                   </span>
                 </>
               )}
@@ -339,8 +337,8 @@ export default function ReportsPage() {
                             }
                           >
                             {item.status === 'no_show'
-                              ? 'Não compareceu'
-                              : 'Cancelado'}
+                              ? 'NO SHOW'
+                              : 'CANCELADO'}
                           </Badge>
                           {item.status === 'no_show' && item.blocked && (
                             <Badge variant="outline">Bloqueado</Badge>

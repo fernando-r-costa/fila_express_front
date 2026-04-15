@@ -30,6 +30,11 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
   const [brushAvgTime, setBrushAvgTime] = useState(60);
   const [restMinutes, setRestMinutes] = useState(10);
   const [bufferMinutes, setBufferMinutes] = useState(10);
+  const [confirmationNoticeMinutes, setConfirmationNoticeMinutes] =
+    useState(30);
+  const [confirmationTimeoutMinutes, setConfirmationTimeoutMinutes] =
+    useState(10);
+  const [checkinGraceMinutes, setCheckinGraceMinutes] = useState(10);
   const [maxOffsetMinutes, setMaxOffsetMinutes] = useState(10);
   const [lunchStartTime, setLunchStartTime] = useState('');
   const [lunchEndTime, setLunchEndTime] = useState('');
@@ -55,8 +60,15 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     if (manicureAvgTime <= 0 || pedicureAvgTime <= 0 || brushAvgTime <= 0) {
       return 'Durações médias devem ser maiores que zero.';
     }
-    if (restMinutes < 0 || bufferMinutes < 0 || maxOffsetMinutes < 0) {
-      return 'Rest, buffer e offset não podem ser negativos.';
+    if (
+      restMinutes < 0 ||
+      bufferMinutes < 0 ||
+      confirmationNoticeMinutes < 0 ||
+      confirmationTimeoutMinutes < 1 ||
+      checkinGraceMinutes < 0 ||
+      maxOffsetMinutes < 0
+    ) {
+      return 'Tempos operacionais não podem ser negativos e o timeout mínimo de confirmação deve ser maior que zero.';
     }
     return null;
   };
@@ -107,6 +119,17 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
         if (Number.isFinite(Number(data.bufferMinutes))) {
           setBufferMinutes(Number(data.bufferMinutes));
         }
+        if (Number.isFinite(Number(data.confirmationNoticeMinutes))) {
+          setConfirmationNoticeMinutes(Number(data.confirmationNoticeMinutes));
+        }
+        if (Number.isFinite(Number(data.confirmationTimeoutMinutes))) {
+          setConfirmationTimeoutMinutes(
+            Number(data.confirmationTimeoutMinutes)
+          );
+        }
+        if (Number.isFinite(Number(data.checkinGraceMinutes))) {
+          setCheckinGraceMinutes(Number(data.checkinGraceMinutes));
+        }
         if (Number.isFinite(Number(data.maxOffsetMinutes))) {
           setMaxOffsetMinutes(Number(data.maxOffsetMinutes));
         }
@@ -149,6 +172,9 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
       brushAvgTime,
       restMinutes,
       bufferMinutes,
+      confirmationNoticeMinutes,
+      confirmationTimeoutMinutes,
+      checkinGraceMinutes,
       maxOffsetMinutes,
       lunchStartTime: lunchStartTime || null,
       lunchEndTime: lunchEndTime || null,
@@ -334,6 +360,48 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
                   min="0"
                   value={bufferMinutes}
                   onChange={(e) => setBufferMinutes(Number(e.target.value))}
+                />
+              </div>
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="confirmation-notice-minutes">
+                  Aviso de confirmação
+                </Label>
+                <Input
+                  id="confirmation-notice-minutes"
+                  type="number"
+                  min="0"
+                  value={confirmationNoticeMinutes}
+                  onChange={(e) =>
+                    setConfirmationNoticeMinutes(Number(e.target.value))
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="confirmation-timeout-minutes">
+                  Tempo para confirmar
+                </Label>
+                <Input
+                  id="confirmation-timeout-minutes"
+                  type="number"
+                  min="1"
+                  value={confirmationTimeoutMinutes}
+                  onChange={(e) =>
+                    setConfirmationTimeoutMinutes(Number(e.target.value))
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-2 items-center gap-4">
+                <Label htmlFor="checkin-grace-minutes">
+                  Tolerância do check-in
+                </Label>
+                <Input
+                  id="checkin-grace-minutes"
+                  type="number"
+                  min="0"
+                  value={checkinGraceMinutes}
+                  onChange={(e) =>
+                    setCheckinGraceMinutes(Number(e.target.value))
+                  }
                 />
               </div>
               <div className="grid grid-cols-2 items-center gap-4">

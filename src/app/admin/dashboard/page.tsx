@@ -71,6 +71,8 @@ import {
   Hand,
   Footprints,
   Phone,
+  Mail,
+  QrCode,
 } from 'lucide-react';
 import { useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -95,9 +97,18 @@ type Client = {
   position: number;
   name: string;
   phone?: string;
+  email?: string;
   services: string[];
   queue: QueueType;
   status: 'em_atendimento' | 'aguardando';
+  rawStatus?:
+    | 'waiting'
+    | 'confirmed'
+    | 'arrived'
+    | 'in_progress'
+    | 'finished'
+    | 'cancelled'
+    | 'no_show';
   waitTime: number;
   confirmed?: boolean;
   notified?: boolean;
@@ -134,50 +145,39 @@ type CapacitySummary = {
 };
 
 function StatusBadge({ client }: { client: Client; waitingClients: Client[] }) {
-  const getMinutesUntilStart = (): number => {
-    const allocations = client.serviceAllocations;
-    if (!allocations) return Infinity;
-
-    const startTimes: Date[] = [];
-    // Varre chaves conhecidas do objeto de alocação convertido
-    for (const service of ['manicure', 'pedicure', 'brush'] as const) {
-      const alloc = allocations[service];
-      if (alloc && 'start' in alloc && alloc.start) {
-        startTimes.push(new Date(alloc.start));
-      }
-    }
-
-    if (startTimes.length === 0) return Infinity;
-
-    const earliestStart = new Date(
-      Math.min(...startTimes.map((d) => d.getTime()))
-    );
-    const now = new Date();
-    const minutesUntilStart = Math.round(
-      (earliestStart.getTime() - now.getTime()) / 60000
-    );
-    return minutesUntilStart;
-  };
-
-  const minutesUntilStart = getMinutesUntilStart();
-
-  if (client.status === 'em_atendimento') return <Badge>Em Atendimento</Badge>;
-  if (minutesUntilStart <= 10 && minutesUntilStart !== Infinity)
-    return <Badge variant="secondary">Próximo</Badge>;
-  if (client.confirmed)
-    return (
-      <Badge variant="outline" className="border-green-500 text-green-500">
-        Confirmado
-      </Badge>
-    );
-  if (client.notified)
-    return (
-      <Badge variant="outline" className="border-yellow-500 text-yellow-500">
-        Notificado
-      </Badge>
-    );
-
-  return <Badge variant="outline">Aguardando</Badge>;
+  switch (client.rawStatus) {
+    case 'waiting':
+      return <Badge variant="outline">NA FILA</Badge>;
+    case 'confirmed':
+      return (
+        <Badge variant="outline" className="border-green-500 text-green-500">
+          CONFIRMADO
+        </Badge>
+      );
+    case 'arrived':
+      return (
+        <Badge variant="outline" className="border-blue-500 text-blue-500">
+          NA ESPERA
+        </Badge>
+      );
+    case 'in_progress':
+      return <Badge>ATENDENDO</Badge>;
+    case 'finished':
+      return (
+        <Badge
+          variant="outline"
+          className="border-emerald-600 text-emerald-600"
+        >
+          FINALIZADO
+        </Badge>
+      );
+    case 'cancelled':
+      return <Badge variant="secondary">CANCELADO</Badge>;
+    case 'no_show':
+      return <Badge variant="destructive">NO SHOW</Badge>;
+    default:
+      return <Badge variant="outline">NA FILA</Badge>;
+  }
 }
 
 interface QueueColumnProps {
@@ -434,6 +434,12 @@ function QueueColumn({
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Phone className="h-3 w-3" />
                         <span>{formatBrazilPhone(client.phone)}</span>
+                      </div>
+                    )}
+                    {client.email && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Mail className="h-3 w-3" />
+                        <span>{client.email}</span>
                       </div>
                     )}
                     <div className="text-xs text-muted-foreground">
@@ -794,7 +800,7 @@ export default function DashboardPage() {
   };
 
   const isEligibleForCallNext = (c: Client, queueType: QueueType) =>
-    (c.confirmed || c.status === 'em_atendimento') &&
+    c.rawStatus === 'arrived' &&
     belongsToQueue(c, queueType) &&
     poolHasPendingService(c, queueType);
 
@@ -859,6 +865,7 @@ export default function DashboardPage() {
     const statusMapping: Record<string, 'em_atendimento' | 'aguardando'> = {
       waiting: 'aguardando',
       confirmed: 'aguardando',
+      arrived: 'aguardando',
       in_progress: 'em_atendimento',
       finished: 'aguardando',
       cancelled: 'aguardando',
@@ -883,11 +890,13 @@ export default function DashboardPage() {
       position: apiData.position,
       name: apiData.clientName,
       phone: apiData.clientPhone,
+      email: apiData.clientEmail,
       services: mappedServices,
       queue,
       status: statusMapping[apiData.status] || 'aguardando',
+      rawStatus: apiData.status,
       waitTime: apiData.remainingTime || 0,
-      confirmed: apiData.status === 'confirmed',
+      confirmed: apiData.status === 'confirmed' || apiData.status === 'arrived',
       notified: apiData.notified || false,
       serviceAllocations: finalAllocations, // Agora sempre populado
       finishedServices: finishedServices,
@@ -985,17 +994,57 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!isCallNextDialogOpen || !callNextQueueType) return;
 
-    const eligible = queueData.filter((client) =>
-      isEligibleForCallNext(client, callNextQueueType)
-    );
+    const eligible = queueData.filter((client) => {
+      const poolServices =
+        callNextQueueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
+      const finished = client.finishedServices || [];
+      const doing = client.doingServices || [];
+
+      const hasPendingInPool = poolServices.some((service) => {
+        const alloc =
+          client.serviceAllocations?.[
+            service as keyof typeof client.serviceAllocations
+          ];
+        const isRequested = !!alloc;
+        const isFinished = finished.includes(service);
+        const isDoing = doing.includes(service);
+        return isRequested && !isFinished && !isDoing;
+      });
+
+      const belongsToPool =
+        callNextQueueType === 'escova'
+          ? client.services.includes('escova')
+          : client.services.includes('manicure') ||
+            client.services.includes('pedicure');
+
+      const statusEligible = client.rawStatus === 'arrived';
+
+      return statusEligible && belongsToPool && hasPendingInPool;
+    });
 
     const defaultClient = eligible[0];
     setCallNextClientId(defaultClient?.id ?? '');
-    setCallNextServices(
-      defaultClient
-        ? getPendingServicesForClient(defaultClient, callNextQueueType)
-        : []
-    );
+    if (!defaultClient) {
+      setCallNextServices([]);
+    } else {
+      const poolServices =
+        callNextQueueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
+      const finished = defaultClient.finishedServices || [];
+      const doing = defaultClient.doingServices || [];
+
+      const pendingServices = poolServices.filter((service) => {
+        const alloc =
+          defaultClient.serviceAllocations?.[
+            service as keyof typeof defaultClient.serviceAllocations
+          ];
+        const isRequested = !!alloc;
+        const isFinished = finished.includes(service);
+        const isDoing = doing.includes(service);
+        return isRequested && !isFinished && !isDoing;
+      });
+
+      setCallNextServices(pendingServices);
+    }
     setCallNextError(null);
   }, [isCallNextDialogOpen, callNextQueueType, queueData]);
 
@@ -1497,6 +1546,18 @@ export default function DashboardPage() {
                 <SheetHeader>
                   <SheetTitle>Configurações do Sistema</SheetTitle>
                 </SheetHeader>
+                <div className="px-4 pt-4">
+                  <Button
+                    asChild
+                    variant="secondary"
+                    className="w-full sm:w-auto"
+                  >
+                    <Link href="/admin/dashboard/checkin-qr">
+                      <QrCode className="mr-2 h-4 w-4" />
+                      Abrir QR de Check-in
+                    </Link>
+                  </Button>
+                </div>
                 <SettingsSheet
                   onSave={handleSettingsSave}
                   salonId={salonId ?? undefined}

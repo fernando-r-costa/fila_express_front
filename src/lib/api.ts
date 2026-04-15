@@ -1,5 +1,34 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios';
 
+const resolveApiBaseURL = () => {
+  const configuredBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+
+  if (typeof window === 'undefined') {
+    return configuredBaseUrl;
+  }
+
+  const browserBaseUrl = '/api/fila-express/';
+
+  if (!configuredBaseUrl) {
+    return browserBaseUrl;
+  }
+
+  try {
+    const configuredHost = new URL(configuredBaseUrl).hostname;
+    if (
+      configuredHost === 'localhost' ||
+      configuredHost === '127.0.0.1' ||
+      configuredHost === window.location.hostname
+    ) {
+      return browserBaseUrl;
+    }
+  } catch {
+    // Se a URL configurada vier inválida, cai para o host do navegador.
+  }
+
+  return browserBaseUrl;
+};
+
 const principalTimeoutRaw = Number.parseInt(
   process.env.NEXT_PUBLIC_AI_PRINCIPAL_TIMEOUT_MS ?? '',
   10
@@ -17,7 +46,7 @@ const optimizeQueueTimeout = Number.isFinite(optimizeQueueTimeoutRaw)
   : 90000;
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL,
+  baseURL: resolveApiBaseURL(),
   timeout: 60000, // 60 segundos de timeout padrão
 });
 

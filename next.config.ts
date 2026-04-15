@@ -5,8 +5,29 @@ const nextConfig: NextConfig = {
   // Allow cross-origin requests from local network IP in development
   ...(process.env.NODE_ENV === 'development' && {
     // @ts-ignore - allowedDevOrigins is experimental but not in types
-    allowedDevOrigins: ['192.168.0.166'],
+    allowedDevOrigins: [
+      'https://localhost:3001',
+      'https://127.0.0.1:3001',
+      'https://192.168.0.230:3001',
+      'https://192.168.137.1:3001',
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
+      'http://192.168.0.230:3001',
+      'http://192.168.137.1:3001',
+    ],
   }),
+  async rewrites() {
+    if (process.env.NODE_ENV !== 'development') {
+      return [];
+    }
+
+    return [
+      {
+        source: '/api/fila-express/:path*',
+        destination: 'http://127.0.0.1:3000/api/fila-express/:path*',
+      },
+    ];
+  },
   async headers() {
     return [
       {
