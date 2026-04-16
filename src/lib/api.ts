@@ -22,11 +22,13 @@ const resolveApiBaseURL = () => {
     ) {
       return browserBaseUrl;
     }
+
+    // Em produção com API externa (ex.: Render), usar a URL configurada.
+    return configuredBaseUrl;
   } catch {
     // Se a URL configurada vier inválida, cai para o host do navegador.
+    return browserBaseUrl;
   }
-
-  return browserBaseUrl;
 };
 
 const principalTimeoutRaw = Number.parseInt(
