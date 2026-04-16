@@ -91,6 +91,14 @@ type WaitData = {
   appointmentId?: number;
 };
 
+type Attendant = {
+  attendantId: number;
+  salonId: number;
+  name: string;
+  roles: string[];
+  active: boolean;
+};
+
 // Interface adaptada para aceitar estrutura antiga (compatibilidade UI)
 type Client = {
   id: string;
@@ -119,10 +127,25 @@ type Client = {
     brush?: { start?: string | Date; end?: string | Date };
     meta?: { offsetAllowanceMinutes?: number; reservations?: any[] };
   };
+  serviceAttendants?: Record<string, string>;
   finishedServices?: string[];
   doingServices?: string[];
 };
 type QueueType = 'manicure_pedicure' | 'escova';
+
+const SERVICE_LABEL_MAP: Record<string, string> = {
+  manicure: 'Manicure',
+  pedicure: 'Pedicure',
+  brush: 'Escova',
+};
+
+const formatServiceWithAttendant = (
+  serviceName: string,
+  attendantName?: string
+) => {
+  const serviceLabel = SERVICE_LABEL_MAP[serviceName] || serviceName;
+  return attendantName ? `${serviceLabel} - ${attendantName}` : serviceLabel;
+};
 
 type CapacitySummary = {
   timestamp: string;
@@ -399,25 +422,29 @@ function QueueColumn({
                   }
                 }
 
-                const checkActive = (label: string, start?: any, end?: any) => {
+                const checkActive = (
+                  serviceName: string,
+                  start?: any,
+                  end?: any
+                ) => {
                   if (!start || !end) return;
                   const s = new Date(start).getTime();
                   const e = new Date(end).getTime();
                   if (nowTs >= s - 30000 && nowTs < e)
-                    activeServices.push(label);
+                    activeServices.push(serviceName);
                 };
                 checkActive(
-                  'MANICURE',
+                  'manicure',
                   client.serviceAllocations.manicure?.start,
                   client.serviceAllocations.manicure?.end
                 );
                 checkActive(
-                  'PEDICURE',
+                  'pedicure',
                   client.serviceAllocations.pedicure?.start,
                   client.serviceAllocations.pedicure?.end
                 );
                 checkActive(
-                  'ESCOVA',
+                  'brush',
                   client.serviceAllocations.brush?.start,
                   client.serviceAllocations.brush?.end
                 );
@@ -443,7 +470,14 @@ function QueueColumn({
                       </div>
                     )}
                     <div className="text-xs text-muted-foreground">
-                      {client.services.map((s) => s.toUpperCase()).join(', ')}
+                      {client.services
+                        .map((s) =>
+                          formatServiceWithAttendant(
+                            s,
+                            client.serviceAttendants?.[s]
+                          )
+                        )
+                        .join(', ')}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -479,7 +513,10 @@ function QueueColumn({
                                 key={`${client.id}-${s}`}
                                 className="rounded border px-1 py-0.5"
                               >
-                                {s}
+                                {formatServiceWithAttendant(
+                                  s,
+                                  client.serviceAttendants?.[s]
+                                )}
                               </span>
                             ))}
                           </div>
@@ -689,6 +726,10 @@ export default function DashboardPage() {
   );
   const [callNextClientId, setCallNextClientId] = useState('');
   const [callNextServices, setCallNextServices] = useState<string[]>([]);
+  const [callNextAttendants, setCallNextAttendants] = useState<Attendant[]>([]);
+  const [callNextAttendantByService, setCallNextAttendantByService] = useState<
+    Record<string, string>
+  >({});
   const [callNextError, setCallNextError] = useState<string | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [pendingRequests, setPendingRequests] = useState(0);
@@ -756,10 +797,12 @@ export default function DashboardPage() {
     return c.services.includes('manicure') || c.services.includes('pedicure');
   };
 
-  const serviceLabelMap: Record<string, string> = {
-    manicure: 'Manicure',
-    pedicure: 'Pedicure',
-    brush: 'Escova',
+  const serviceLabelMap: Record<string, string> = SERVICE_LABEL_MAP;
+
+  const getAttendantsForService = (serviceName: string) => {
+    return callNextAttendants.filter(
+      (attendant) => attendant.active && attendant.roles.includes(serviceName)
+    );
   };
 
   const getPendingServicesForClient = (
@@ -837,6 +880,7 @@ export default function DashboardPage() {
     // Converter Array de Services (Novo) para serviceAllocations (Velho/UI)
     // Isso evita reescrever todo o componente visual
     const syntheticAllocations: any = {};
+    const serviceAttendants: Record<string, string> = {};
     if (Array.isArray(apiData.services)) {
       apiData.services
         .filter((s: any) => s.status !== 'not_requested') // Filtrar not_requested
@@ -856,6 +900,9 @@ export default function DashboardPage() {
             start: startTime,
             end: endTime,
           };
+          if (s.attendant?.name) {
+            serviceAttendants[name] = s.attendant.name;
+          }
         });
     }
 
@@ -899,6 +946,7 @@ export default function DashboardPage() {
       confirmed: apiData.status === 'confirmed' || apiData.status === 'arrived',
       notified: apiData.notified || false,
       serviceAllocations: finalAllocations, // Agora sempre populado
+      serviceAttendants,
       finishedServices: finishedServices,
       doingServices: doingServices,
     };
@@ -1054,6 +1102,24 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, authLoading, router]);
 
+  useEffect(() => {
+    if (!isCallNextDialogOpen || !callNextQueueType || !salonId) return;
+
+    const loadAttendants = async () => {
+      try {
+        const response = await api.get('/salon/attendants/active');
+        setCallNextAttendants(
+          Array.isArray(response.data) ? response.data : []
+        );
+      } catch (error) {
+        console.error('Falha ao carregar atendentes:', error);
+        setCallNextAttendants([]);
+      }
+    };
+
+    loadAttendants();
+  }, [isCallNextDialogOpen, callNextQueueType, salonId]);
+
   if (authLoading || (isAuthenticated && isDataLoading)) {
     return (
       <div className="flex min-h-[200px] items-center justify-center py-10 text-secondary">
@@ -1165,6 +1231,23 @@ export default function DashboardPage() {
       return;
     }
 
+    const missingAttendantService = callNextServices.find(
+      (serviceName) => !callNextAttendantByService[serviceName]
+    );
+    if (missingAttendantService) {
+      setCallNextError(
+        `Selecione o atendente do serviço ${serviceLabelMap[missingAttendantService] || missingAttendantService}.`
+      );
+      return;
+    }
+
+    const attendantAssignments = Object.fromEntries(
+      callNextServices.map((serviceName) => [
+        serviceName,
+        Number(callNextAttendantByService[serviceName]),
+      ])
+    );
+
     setIsCallingNext(callNextQueueType);
     try {
       startRequest();
@@ -1175,6 +1258,7 @@ export default function DashboardPage() {
         queueType: backendQueueType,
         appointmentId: Number(callNextClientId),
         services: callNextServices,
+        attendantAssignments,
       });
       await fetchQueueData();
       const clientName = response.data?.client?.clientName || 'Cliente';
@@ -1382,6 +1466,7 @@ export default function DashboardPage() {
   const handleCallNextClientToggle = (clientId: string) => {
     const nextId = callNextClientId === clientId ? '' : clientId;
     setCallNextClientId(nextId);
+    setCallNextAttendantByService({});
     const nextClient = confirmedClientsForCallNext.find(
       (client) => client.id === nextId
     );
@@ -1396,10 +1481,31 @@ export default function DashboardPage() {
   const handleCallNextServiceToggle = (serviceName: string) => {
     setCallNextServices((current) => {
       const hasService = current.includes(serviceName);
-      return hasService
+      const nextServices = hasService
         ? current.filter((service) => service !== serviceName)
         : [...current, serviceName];
+
+      if (hasService) {
+        setCallNextAttendantByService((currentAssignments) => {
+          const nextAssignments = { ...currentAssignments };
+          delete nextAssignments[serviceName];
+          return nextAssignments;
+        });
+      }
+
+      return nextServices;
     });
+    setCallNextError(null);
+  };
+
+  const handleCallNextAttendantChange = (
+    serviceName: string,
+    attendantId: string
+  ) => {
+    setCallNextAttendantByService((current) => ({
+      ...current,
+      [serviceName]: attendantId,
+    }));
     setCallNextError(null);
   };
 
@@ -1413,6 +1519,8 @@ export default function DashboardPage() {
             setCallNextQueueType(null);
             setCallNextClientId('');
             setCallNextServices([]);
+            setCallNextAttendants([]);
+            setCallNextAttendantByService({});
             setCallNextError(null);
           }
         }}
@@ -1472,6 +1580,65 @@ export default function DashboardPage() {
                       <span>{serviceLabelMap[service] || service}</span>
                     </label>
                   ))}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Atendente por serviço</Label>
+              {availableCallNextServices.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
+                  Selecione uma cliente para definir os atendentes.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {availableCallNextServices.map((serviceName) => {
+                    const serviceAttendants =
+                      getAttendantsForService(serviceName);
+                    const selectedAttendant =
+                      callNextAttendantByService[serviceName] ?? '';
+
+                    return (
+                      <div
+                        key={serviceName}
+                        className="space-y-2 rounded-md border border-border p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium">
+                            {serviceLabelMap[serviceName] || serviceName}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            escolha o profissional
+                          </span>
+                        </div>
+                        {serviceAttendants.length === 0 ? (
+                          <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
+                            Nenhum atendente ativo cadastrado para este serviço.
+                          </p>
+                        ) : (
+                          <select
+                            className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                            value={selectedAttendant}
+                            onChange={(e) =>
+                              handleCallNextAttendantChange(
+                                serviceName,
+                                e.target.value
+                              )
+                            }
+                          >
+                            <option value="">Selecione o atendente</option>
+                            {serviceAttendants.map((attendant) => (
+                              <option
+                                key={attendant.attendantId}
+                                value={String(attendant.attendantId)}
+                              >
+                                {attendant.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

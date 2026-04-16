@@ -33,6 +33,9 @@ import { CheckCircle, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
+const CONFIRMATION_NOTICE_MINUTES = 30;
+const AUTO_CANCEL_THRESHOLD_MINUTES = 20;
+
 type TrackingData = {
   initialTime: number;
   initialPosition: number | null;
@@ -489,9 +492,12 @@ export default function QueuePage() {
   return (
     <div className="flex flex-col items-center justify-center">
       <div className="p-4">
-        {data.notified || (data.initialTime > 20 && data.initialTime <= 30) ? (
+        {data.notified ||
+        (data.initialTime > AUTO_CANCEL_THRESHOLD_MINUTES &&
+          data.initialTime <= CONFIRMATION_NOTICE_MINUTES) ? (
           <TimeConfirmationView
             remainingTime={data.initialTime}
+            autoCancelThresholdMinutes={AUTO_CANCEL_THRESHOLD_MINUTES}
             onConfirm={() =>
               handleFinalConfirmation(data.initialTime, data.clientPhone)
             }

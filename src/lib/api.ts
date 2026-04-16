@@ -7,7 +7,7 @@ const resolveApiBaseURL = () => {
     return configuredBaseUrl;
   }
 
-  const browserBaseUrl = '/api/fila-express/';
+  const browserBaseUrl = `${window.location.origin}/api/fila-express`;
 
   if (!configuredBaseUrl) {
     return browserBaseUrl;
@@ -54,6 +54,11 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    // Mantem o prefixo do baseURL (/api/fila-express) mesmo quando a chamada usa '/rota'.
+    if (config.url?.startsWith('/')) {
+      config.url = config.url.slice(1);
+    }
+
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('authTokenSalao');
       if (token) {

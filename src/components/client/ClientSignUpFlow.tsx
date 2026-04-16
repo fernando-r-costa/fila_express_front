@@ -294,6 +294,7 @@ export function ClientSignUpFlow({
           return (
             <ServiceSelectionForm
               clientData={clientData}
+              salonId={salonId}
               onSuccess={handleServiceSelectionSuccess}
             />
           );

@@ -1,12 +1,30 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Loader2 } from 'lucide-react';
 import api from '@/lib/api';
+
+type Attendant = {
+  attendantId: number;
+  salonId: number;
+  name: string;
+  roles: Array<'manicure' | 'pedicure' | 'brush'>;
+  active: boolean;
+};
 
 interface SettingsSheetProps {
   onSave: (settings: any) => void;
@@ -16,9 +34,32 @@ interface SettingsSheetProps {
 export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
+  const [isAttendantModalOpen, setIsAttendantModalOpen] = useState(false);
+  const [isAttendantsLoading, setIsAttendantsLoading] = useState(false);
+  const [isAttendantSaving, setIsAttendantSaving] = useState(false);
+  const [attendants, setAttendants] = useState<Attendant[]>([]);
+  const [attendantListFilter, setAttendantListFilter] = useState<
+    'all' | 'active' | 'inactive'
+  >('all');
+  const [attendantFormError, setAttendantFormError] = useState<string | null>(
+    null
+  );
+  const [attendantForm, setAttendantForm] = useState<{
+    attendantId: number | null;
+    name: string;
+    roles: Array<'manicure' | 'pedicure' | 'brush'>;
+    active: boolean;
+  }>({
+    attendantId: null,
+    name: '',
+    roles: ['manicure'],
+    active: true,
+  });
 
   const [manicureAttendants, setManicureAttendants] = useState(2);
   const [escovaAttendants, setEscovaAttendants] = useState(1);
+  const [useActiveAttendantsCapacity, setUseActiveAttendantsCapacity] =
+    useState(false);
   const [openingTime, setOpeningTime] = useState('09:00');
   const [closingTime, setClosingTime] = useState('18:00');
   const [mpStrategy, setMpStrategy] = useState<'optimized' | 'always_two'>(
@@ -47,11 +88,75 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     return h * 60 + m;
   };
 
+  const resetAttendantForm = () => {
+    setAttendantForm({
+      attendantId: null,
+      name: '',
+      roles: ['manicure'],
+      active: true,
+    });
+    setAttendantFormError(null);
+  };
+
+  const toggleAttendantRole = (role: 'manicure' | 'pedicure' | 'brush') => {
+    setAttendantForm((current) => {
+      const hasRole = current.roles.includes(role);
+      const roles = hasRole
+        ? current.roles.filter((item) => item !== role)
+        : [...current.roles, role];
+      return { ...current, roles };
+    });
+  };
+
+  const loadAttendants = async () => {
+    if (!salonId) return;
+    try {
+      setIsAttendantsLoading(true);
+      const response = await api.get('/salon/attendants');
+      setAttendants(Array.isArray(response.data) ? response.data : []);
+    } catch (error: any) {
+      if (error?.response?.status !== 400 && error?.response?.status !== 401) {
+        console.error('Falha ao carregar atendentes:', error);
+      }
+      setAttendants([]);
+    } finally {
+      setIsAttendantsLoading(false);
+    }
+  };
+
+  const openAttendantEditor = (attendant?: Attendant) => {
+    if (attendant) {
+      setAttendantForm({
+        attendantId: attendant.attendantId,
+        name: attendant.name,
+        roles: attendant.roles,
+        active: attendant.active,
+      });
+    } else {
+      resetAttendantForm();
+    }
+    setIsAttendantModalOpen(true);
+  };
+
+  const closeAttendantModal = () => {
+    setIsAttendantModalOpen(false);
+    resetAttendantForm();
+  };
+
+  const filteredAttendants = attendants.filter((attendant) => {
+    if (attendantListFilter === 'active') return attendant.active;
+    if (attendantListFilter === 'inactive') return !attendant.active;
+    return true;
+  });
+
   const validate = () => {
     if (timeToMinutes(openingTime) >= timeToMinutes(closingTime)) {
       return 'Horário de abertura deve ser anterior ao de fechamento.';
     }
-    if (manicureAttendants < 1 || escovaAttendants < 1) {
+    if (
+      !useActiveAttendantsCapacity &&
+      (manicureAttendants < 1 || escovaAttendants < 1)
+    ) {
       return 'Quantidade de atendentes deve ser no mínimo 1 em cada pool.';
     }
     if (queuePreOpeningHours < 0) {
@@ -90,6 +195,9 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
         );
         setEscovaAttendants(
           Number(data.brushAttendants ?? data.numberOfBrushStations ?? 1)
+        );
+        setUseActiveAttendantsCapacity(
+          Boolean(data.useActiveAttendantsCapacity)
         );
         if (typeof data.openingTime === 'string')
           setOpeningTime(data.openingTime);
@@ -155,6 +263,11 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     loadSalonConfig();
   }, [salonId]);
 
+  useEffect(() => {
+    if (!isAttendantModalOpen) return;
+    loadAttendants();
+  }, [isAttendantModalOpen, salonId]);
+
   const handleSave = () => {
     const err = validate();
     setFormError(err);
@@ -165,6 +278,7 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
       closingTime,
       manicurePedicureAttendants: manicureAttendants,
       brushAttendants: escovaAttendants,
+      useActiveAttendantsCapacity,
       mpOptimizationStrategy: mpStrategy,
       queuePreOpeningHours,
       manicureAvgTime,
@@ -183,6 +297,72 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     };
     onSave(newSettings);
     setIsLoading(false);
+  };
+
+  const handleSaveAttendant = async () => {
+    if (!salonId) return;
+
+    const name = attendantForm.name.trim();
+    if (!name) {
+      setAttendantFormError('Informe o nome do atendente.');
+      return;
+    }
+
+    if (attendantForm.roles.length === 0) {
+      setAttendantFormError('Selecione ao menos uma função para o atendente.');
+      return;
+    }
+
+    try {
+      setIsAttendantSaving(true);
+      const payload = {
+        name,
+        roles: attendantForm.roles,
+        active: attendantForm.active,
+      };
+
+      if (attendantForm.attendantId) {
+        await api.put(
+          `/salon/attendants/${attendantForm.attendantId}`,
+          payload
+        );
+      } else {
+        await api.post('/salon/attendants', payload);
+      }
+
+      await loadAttendants();
+      resetAttendantForm();
+    } catch (error: any) {
+      const msg = error.response?.data?.error || 'Erro ao salvar atendente.';
+      setAttendantFormError(msg);
+    } finally {
+      setIsAttendantSaving(false);
+    }
+  };
+
+  const handleDeleteAttendant = async (attendantId: number) => {
+    if (!salonId) return;
+    if (
+      !window.confirm(
+        'Excluir este atendente? Esta ação não pode ser desfeita.'
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsAttendantSaving(true);
+      await api.delete(`/salon/attendants/${attendantId}`);
+      await loadAttendants();
+      if (attendantForm.attendantId === attendantId) {
+        resetAttendantForm();
+      }
+    } catch (error: any) {
+      const msg = error.response?.data?.error || 'Erro ao excluir atendente.';
+      setAttendantFormError(msg);
+    } finally {
+      setIsAttendantSaving(false);
+    }
   };
 
   return (
@@ -235,6 +415,27 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
             <h3 className="text-lg font-medium">Atendentes</h3>
             <Separator className="my-4" />
             <div className="space-y-4">
+              <div className="rounded-md border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label htmlFor="use-active-attendants-capacity">
+                      Usar atendentes ativos como capacidade
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Quando ligado, a capacidade dos pools é calculada pelo
+                      cadastro de atendentes ativos.
+                    </p>
+                  </div>
+                  <Checkbox
+                    id="use-active-attendants-capacity"
+                    checked={useActiveAttendantsCapacity}
+                    onCheckedChange={(checked) =>
+                      setUseActiveAttendantsCapacity(Boolean(checked))
+                    }
+                  />
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 items-center gap-4">
                 <Label htmlFor="manicure-attendants">Manicure & Pedicure</Label>
                 <Input
@@ -246,6 +447,7 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
                     setManicureAttendants(Number(e.target.value))
                   }
                   className="col-span-1"
+                  disabled={useActiveAttendantsCapacity}
                 />
               </div>
               <div className="grid grid-cols-2 items-center gap-4">
@@ -257,8 +459,22 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
                   value={escovaAttendants}
                   onChange={(e) => setEscovaAttendants(Number(e.target.value))}
                   className="col-span-1"
+                  disabled={useActiveAttendantsCapacity}
                 />
               </div>
+              <p className="text-xs text-muted-foreground">
+                {useActiveAttendantsCapacity
+                  ? 'Capacidade manual desativada. Os pools usarão os atendentes ativos cadastrados.'
+                  : 'Capacidade manual ativa. Você ainda pode gerenciar atendentes para operação e histórico.'}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => openAttendantEditor()}
+              >
+                Gerenciar Atendentes
+              </Button>
             </div>
           </div>
 
@@ -485,6 +701,239 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
           </div>
         </div>
       </div>
+
+      <AlertDialog
+        open={isAttendantModalOpen}
+        onOpenChange={(open) => {
+          setIsAttendantModalOpen(open);
+          if (!open) {
+            closeAttendantModal();
+          }
+        }}
+      >
+        <AlertDialogContent className="max-h-[90vh] max-w-3xl overflow-hidden p-0">
+          <div className="flex h-full max-h-[90vh] flex-col">
+            <AlertDialogHeader className="shrink-0 border-b px-6 py-5 text-left">
+              <AlertDialogTitle>Gerenciar atendentes</AlertDialogTitle>
+              <AlertDialogDescription>
+                Cadastre, edite, ative ou remova os atendentes do salão.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="grid flex-1 gap-6 overflow-hidden px-6 py-5 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold uppercase text-muted-foreground">
+                    Lista de atendentes
+                  </h4>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => openAttendantEditor()}
+                  >
+                    Novo atendente
+                  </Button>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      ['all', 'Todos'],
+                      ['active', 'Ativos'],
+                      ['inactive', 'Inativos'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      size="sm"
+                      variant={
+                        attendantListFilter === value ? 'default' : 'outline'
+                      }
+                      onClick={() => setAttendantListFilter(value)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+
+                {isAttendantsLoading ? (
+                  <div className="flex items-center gap-2 rounded-md border px-3 py-3 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando atendentes...
+                  </div>
+                ) : filteredAttendants.length === 0 ? (
+                  <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                    Nenhum atendente encontrado para este filtro.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredAttendants.map((attendant) => (
+                      <div
+                        key={attendant.attendantId}
+                        className="rounded-md border p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-medium">{attendant.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {attendant.roles
+                                .map((role) =>
+                                  role === 'manicure'
+                                    ? 'Manicure'
+                                    : role === 'pedicure'
+                                      ? 'Pedicure'
+                                      : 'Escova'
+                                )
+                                .join(', ')}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {attendant.active ? 'Ativo' : 'Inativo'}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openAttendantEditor(attendant)}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={() =>
+                                handleDeleteAttendant(attendant.attendantId)
+                              }
+                            >
+                              Excluir
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="min-h-0 space-y-4 overflow-y-auto border-l pl-6">
+                <div>
+                  <h4 className="text-sm font-semibold uppercase text-muted-foreground">
+                    {attendantForm.attendantId
+                      ? 'Editar atendente'
+                      : 'Novo atendente'}
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Marque as funções que este profissional pode executar.
+                  </p>
+                </div>
+
+                {attendantFormError && (
+                  <div className="rounded border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">
+                    {attendantFormError}
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="attendant-name">Nome</Label>
+                    <Input
+                      id="attendant-name"
+                      value={attendantForm.name}
+                      onChange={(e) =>
+                        setAttendantForm((current) => ({
+                          ...current,
+                          name: e.target.value,
+                        }))
+                      }
+                      placeholder="Ex: Ana"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Funções</Label>
+                    <div className="space-y-2 rounded-md border p-3">
+                      {(['manicure', 'pedicure', 'brush'] as const).map(
+                        (role) => (
+                          <label
+                            key={role}
+                            className="flex items-center gap-2 text-sm"
+                          >
+                            <Checkbox
+                              checked={attendantForm.roles.includes(role)}
+                              onCheckedChange={() => toggleAttendantRole(role)}
+                            />
+                            <span>
+                              {role === 'manicure'
+                                ? 'Manicure'
+                                : role === 'pedicure'
+                                  ? 'Pedicure'
+                                  : 'Escova'}
+                            </span>
+                          </label>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 rounded-md border p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <Label htmlFor="attendant-active">Ativo</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Se desmarcado, o atendente não aparecerá na chamada do
+                          próximo.
+                        </p>
+                      </div>
+                      <Checkbox
+                        id="attendant-active"
+                        checked={attendantForm.active}
+                        onCheckedChange={(checked) =>
+                          setAttendantForm((current) => ({
+                            ...current,
+                            active: Boolean(checked),
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Button
+                    type="button"
+                    onClick={handleSaveAttendant}
+                    disabled={isAttendantSaving}
+                  >
+                    {isAttendantSaving && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    {attendantForm.attendantId
+                      ? 'Salvar alterações'
+                      : 'Cadastrar atendente'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={resetAttendantForm}
+                  >
+                    Limpar
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <AlertDialogFooter className="shrink-0 border-t px-6 py-4">
+              <AlertDialogCancel onClick={closeAttendantModal}>
+                Fechar
+              </AlertDialogCancel>
+            </AlertDialogFooter>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="mt-0 border-t bg-card p-4">
         <Button type="submit" className="w-full" disabled={isLoading}>

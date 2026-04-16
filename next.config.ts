@@ -6,14 +6,14 @@ const nextConfig: NextConfig = {
   ...(process.env.NODE_ENV === 'development' && {
     // @ts-ignore - allowedDevOrigins is experimental but not in types
     allowedDevOrigins: [
-      'https://localhost:3001',
-      'https://127.0.0.1:3001',
-      'https://192.168.0.230:3001',
-      'https://192.168.137.1:3001',
-      'http://localhost:3001',
-      'http://127.0.0.1:3001',
-      'http://192.168.0.230:3001',
-      'http://192.168.137.1:3001',
+      'localhost',
+      '127.0.0.1',
+      'localhost:3001',
+      '127.0.0.1:3001',
+      '192.168.0.230',
+      '192.168.0.230:3001',
+      '192.168.137.1',
+      '192.168.137.1:3001',
     ],
   }),
   async rewrites() {

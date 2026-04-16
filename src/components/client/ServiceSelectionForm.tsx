@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -13,6 +13,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
+import api from '@/lib/api';
 
 type ClientData = {
   name: string;
@@ -28,11 +29,13 @@ type ServiceData = {
 
 interface ServiceSelectionFormProps {
   clientData: ClientData;
+  salonId?: number;
   onSuccess: (services: ServiceData) => void;
 }
 
 export function ServiceSelectionForm({
   clientData,
+  salonId,
   onSuccess,
 }: ServiceSelectionFormProps) {
   const [selectedServices, setSelectedServices] = useState<ServiceData>({
@@ -41,8 +44,61 @@ export function ServiceSelectionForm({
     escova: false,
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [serviceAvailability, setServiceAvailability] = useState({
+    manicure: true,
+    pedicure: true,
+    escova: true,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAvailability = async () => {
+      if (!salonId) return;
+
+      try {
+        const { data } = await api.get(`/salon/${salonId}`);
+
+        const nailsCount = Number(
+          data?.manicurePedicureAttendants ??
+            data?.numberOfManicurePedicureStations ??
+            0
+        );
+        const brushCount = Number(
+          data?.brushAttendants ?? data?.numberOfBrushStations ?? 0
+        );
+        const nextAvailability = {
+          manicure: nailsCount > 0,
+          pedicure: nailsCount > 0,
+          escova: brushCount > 0,
+        };
+
+        if (!isMounted) return;
+
+        setServiceAvailability(nextAvailability);
+
+        setSelectedServices((prev) => ({
+          manicure: nextAvailability.manicure ? prev.manicure : false,
+          pedicure: nextAvailability.pedicure ? prev.pedicure : false,
+          escova: nextAvailability.escova ? prev.escova : false,
+        }));
+      } catch {
+        // Em erro de leitura, mantém habilitado para não bloquear indevidamente.
+      }
+    };
+
+    loadAvailability();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [salonId]);
 
   const handleCheckboxChange = (service: keyof typeof selectedServices) => {
+    if (!serviceAvailability[service]) {
+      return;
+    }
+
     setSelectedServices((prev) => ({
       ...prev,
       [service]: !prev[service],
@@ -80,29 +136,59 @@ export function ServiceSelectionForm({
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="flex items-center space-x-2">
+          <div
+            className={`flex items-center space-x-2 ${
+              !serviceAvailability.manicure ? 'opacity-50' : ''
+            }`}
+          >
             <Checkbox
               id="manicure"
               checked={selectedServices.manicure}
               onCheckedChange={() => handleCheckboxChange('manicure')}
+              disabled={!serviceAvailability.manicure || isLoading}
             />
             <Label htmlFor="manicure">Manicure</Label>
+            {!serviceAvailability.manicure && (
+              <span className="text-xs text-muted-foreground">
+                indisponível
+              </span>
+            )}
           </div>
-          <div className="flex items-center space-x-2">
+          <div
+            className={`flex items-center space-x-2 ${
+              !serviceAvailability.pedicure ? 'opacity-50' : ''
+            }`}
+          >
             <Checkbox
               id="pedicure"
               checked={selectedServices.pedicure}
               onCheckedChange={() => handleCheckboxChange('pedicure')}
+              disabled={!serviceAvailability.pedicure || isLoading}
             />
             <Label htmlFor="pedicure">Pedicure</Label>
+            {!serviceAvailability.pedicure && (
+              <span className="text-xs text-muted-foreground">
+                indisponível
+              </span>
+            )}
           </div>
-          <div className="flex items-center space-x-2">
+          <div
+            className={`flex items-center space-x-2 ${
+              !serviceAvailability.escova ? 'opacity-50' : ''
+            }`}
+          >
             <Checkbox
               id="escova"
               checked={selectedServices.escova}
               onCheckedChange={() => handleCheckboxChange('escova')}
+              disabled={!serviceAvailability.escova || isLoading}
             />
             <Label htmlFor="escova">Escova</Label>
+            {!serviceAvailability.escova && (
+              <span className="text-xs text-muted-foreground">
+                indisponível
+              </span>
+            )}
           </div>
         </CardContent>
         <CardFooter>

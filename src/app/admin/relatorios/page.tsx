@@ -60,9 +60,12 @@ type CompletedAppointment = {
   clientEmail: string;
   servicesRequested?: string[]; // Legado
   services?: { serviceName: string }[]; // Novo Relacional
-  createdAt: string;
-  startTime: string;
-  finishTime: string;
+  createdAt?: string;
+  startTime?: string;
+  finishTime?: string;
+  queueEntryTime?: string;
+  serviceStartTime?: string;
+  serviceFinishTime?: string;
 };
 
 type CancelledAppointment = {
@@ -99,12 +102,34 @@ export default function ReportsPage() {
   const mapServicesFromBackend = (item: any) => {
     let services: string[] = [];
 
+    if (item.serviceName) {
+      const label =
+        item.serviceName === 'brush' || item.serviceName === 'escova'
+          ? 'Escova'
+          : item.serviceName === 'manicure'
+            ? 'Manicure'
+            : item.serviceName === 'pedicure'
+              ? 'Pedicure'
+              : item.serviceName;
+      return [item.attendantName ? `${label} - ${item.attendantName}` : label];
+    }
+
     if (Array.isArray(item.services)) {
       // Novo formato: [{ serviceName: 'brush', status: 'pending' }]
       // Filtrar apenas serviços solicitados (status !== 'not_requested')
       services = item.services
         .filter((s: any) => s.status !== 'not_requested')
-        .map((s: any) => s.serviceName);
+        .map((s: any) => {
+          const label =
+            s.serviceName === 'brush' || s.serviceName === 'escova'
+              ? 'Escova'
+              : s.serviceName === 'manicure'
+                ? 'Manicure'
+                : s.serviceName === 'pedicure'
+                  ? 'Pedicure'
+                  : s.serviceName;
+          return s.attendant?.name ? `${label} - ${s.attendant.name}` : label;
+        });
     } else if (Array.isArray(item.servicesRequested)) {
       // Formato antigo: ['brush']
       services = item.servicesRequested;
@@ -383,8 +408,8 @@ export default function ReportsPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  completedData.map((item) => (
-                    <TableRow key={item.appointmentId}>
+                  completedData.map((item, index) => (
+                    <TableRow key={`${item.appointmentId}-${index}`}>
                       <TableCell>
                         <div className="font-medium">{item.clientName}</div>
                         <div className="text-xs text-muted-foreground">
@@ -397,9 +422,21 @@ export default function ReportsPage() {
                       <TableCell>
                         {mapServicesFromBackend(item).join(', ')}
                       </TableCell>
-                      <TableCell>{formatTime(item.createdAt)}</TableCell>
-                      <TableCell>{formatTime(item.startTime)}</TableCell>
-                      <TableCell>{formatTime(item.finishTime)}</TableCell>
+                      <TableCell>
+                        {formatTime(
+                          item.queueEntryTime ?? item.createdAt ?? ''
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {formatTime(
+                          item.serviceStartTime ?? item.startTime ?? ''
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {formatTime(
+                          item.serviceFinishTime ?? item.finishTime ?? ''
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
