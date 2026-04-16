@@ -351,7 +351,7 @@ export default function QueuePage() {
       } else {
         clearInterval(intervalId);
       }
-    }, 30000);
+    }, 60000);
 
     return () => clearInterval(intervalId);
   }, [fetchData]);

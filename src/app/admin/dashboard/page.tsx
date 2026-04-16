@@ -987,7 +987,7 @@ export default function DashboardPage() {
     if (!isAuthenticated || !salonId) return;
     const id = setInterval(() => {
       fetchQueueData({ silent: true });
-    }, 20000);
+    }, 30000);
     return () => clearInterval(id);
   }, [isAuthenticated, salonId, fetchQueueData]);
 
@@ -1542,11 +1542,11 @@ export default function DashboardPage() {
                   Configurações
                 </Button>
               </SheetTrigger>
-              <SheetContent className="w-full max-w-3xl bg-card">
-                <SheetHeader>
+              <SheetContent className="flex h-full max-h-screen w-full max-w-3xl flex-col overflow-hidden bg-card p-0">
+                <SheetHeader className="shrink-0 px-6 pt-6">
                   <SheetTitle>Configurações do Sistema</SheetTitle>
                 </SheetHeader>
-                <div className="px-4 pt-4">
+                <div className="shrink-0 px-6 pt-4">
                   <Button
                     asChild
                     variant="secondary"
@@ -1558,10 +1558,12 @@ export default function DashboardPage() {
                     </Link>
                   </Button>
                 </div>
-                <SettingsSheet
-                  onSave={handleSettingsSave}
-                  salonId={salonId ?? undefined}
-                />
+                <div className="min-h-0 flex-1">
+                  <SettingsSheet
+                    onSave={handleSettingsSave}
+                    salonId={salonId ?? undefined}
+                  />
+                </div>
               </SheetContent>
             </Sheet>
           </div>

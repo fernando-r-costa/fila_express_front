@@ -191,7 +191,7 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
         e.preventDefault();
         handleSave();
       }}
-      className="flex h-full flex-col p-4"
+      className="flex h-full min-h-0 flex-col p-4"
     >
       <div className="space-y-3">
         {isFetching && (
@@ -206,7 +206,7 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
           </div>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto pr-2">
+      <div className="min-h-0 flex-1 overflow-y-auto pr-2">
         <div className="grid grid-cols-1 gap-6">
           <div>
             <h3 className="text-lg font-medium">
