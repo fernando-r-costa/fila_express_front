@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -22,8 +22,66 @@ type Attendant = {
   attendantId: number;
   salonId: number;
   name: string;
-  roles: Array<'manicure' | 'pedicure' | 'brush'>;
+  roles: string[];
   active: boolean;
+};
+
+type CatalogService = {
+  serviceId: number;
+  salonId: number;
+  name: string;
+  category?: string | null;
+  durationMinutes: number;
+};
+
+const KNOWN_SERVICE_LABELS: Record<string, string> = {
+  manicure: 'Manicure',
+  pedicure: 'Pedicure',
+  brush: 'Escova',
+  escova: 'Escova',
+  maquiagem: 'Maquiagem',
+};
+
+const KNOWN_CATEGORY_LABELS: Record<string, string> = {
+  unhas: 'Unhas',
+  cabelo: 'Cabelo',
+  maquiagem: 'Maquiagem',
+};
+
+const toTitleCaseLabel = (value: string) =>
+  value
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+
+const formatCatalogServiceName = (service: CatalogService) => {
+  const rawName = String(service.name || '').trim();
+  const nameKey = rawName.toLowerCase();
+  return KNOWN_SERVICE_LABELS[nameKey] || toTitleCaseLabel(rawName);
+};
+
+const formatCatalogCategoryLabel = (category?: string | null) => {
+  const rawCategory = String(category || '').trim();
+  if (!rawCategory) {
+    return 'Outros';
+  }
+
+  const categoryKey = rawCategory.toLowerCase();
+  return KNOWN_CATEGORY_LABELS[categoryKey] || toTitleCaseLabel(rawCategory);
+};
+
+const normalizeServiceKey = (value: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
+
+const formatRoleLabel = (role: string) => {
+  const key = normalizeServiceKey(role);
+  return KNOWN_SERVICE_LABELS[key] || toTitleCaseLabel(key);
 };
 
 interface SettingsSheetProps {
@@ -47,7 +105,7 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
   const [attendantForm, setAttendantForm] = useState<{
     attendantId: number | null;
     name: string;
-    roles: Array<'manicure' | 'pedicure' | 'brush'>;
+    roles: string[];
     active: boolean;
   }>({
     attendantId: null,
@@ -55,6 +113,8 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     roles: ['manicure'],
     active: true,
   });
+
+  const [serviceCatalog, setServiceCatalog] = useState<CatalogService[]>([]);
 
   const [manicureAttendants, setManicureAttendants] = useState(2);
   const [escovaAttendants, setEscovaAttendants] = useState(1);
@@ -66,9 +126,6 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     'optimized'
   );
   const [queuePreOpeningHours, setQueuePreOpeningHours] = useState(1);
-  const [manicureAvgTime, setManicureAvgTime] = useState(30);
-  const [pedicureAvgTime, setPedicureAvgTime] = useState(50);
-  const [brushAvgTime, setBrushAvgTime] = useState(60);
   const [restMinutes, setRestMinutes] = useState(10);
   const [bufferMinutes, setBufferMinutes] = useState(10);
   const [confirmationNoticeMinutes, setConfirmationNoticeMinutes] =
@@ -83,6 +140,49 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
   const [aiName, setAiName] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
+  const groupedCatalogServices = useMemo(() => {
+    const grouped = serviceCatalog.reduce<
+      Record<string, { categoryLabel: string; services: CatalogService[] }>
+    >((acc, service) => {
+      const categoryLabel = formatCatalogCategoryLabel(service.category);
+      if (!acc[categoryLabel]) {
+        acc[categoryLabel] = { categoryLabel, services: [] };
+      }
+      acc[categoryLabel].services.push(service);
+      return acc;
+    }, {});
+
+    return Object.values(grouped)
+      .map((group) => ({
+        ...group,
+        services: [...group.services].sort((a, b) =>
+          formatCatalogServiceName(a).localeCompare(
+            formatCatalogServiceName(b),
+            'pt-BR'
+          )
+        ),
+      }))
+      .sort((a, b) => {
+        if (a.categoryLabel === 'Outros') return 1;
+        if (b.categoryLabel === 'Outros') return -1;
+        return a.categoryLabel.localeCompare(b.categoryLabel, 'pt-BR');
+      });
+  }, [serviceCatalog]);
+
+  const availableRoleOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        serviceCatalog
+          .map((service) => normalizeServiceKey(service.name))
+          .filter(Boolean)
+      )
+    ).sort((a, b) =>
+      formatRoleLabel(a).localeCompare(formatRoleLabel(b), 'pt-BR')
+    );
+  }, [serviceCatalog]);
+
+  const getDefaultRole = () => availableRoleOptions[0] || 'manicure';
+
   const timeToMinutes = (t: string) => {
     const [h, m] = t.split(':').map(Number);
     return h * 60 + m;
@@ -92,23 +192,24 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     setAttendantForm({
       attendantId: null,
       name: '',
-      roles: ['manicure'],
+      roles: [getDefaultRole()],
       active: true,
     });
     setAttendantFormError(null);
   };
 
-  const toggleAttendantRole = (role: 'manicure' | 'pedicure' | 'brush') => {
+  const toggleAttendantRole = (role: string) => {
+    const normalizedRole = normalizeServiceKey(role);
     setAttendantForm((current) => {
-      const hasRole = current.roles.includes(role);
+      const hasRole = current.roles.includes(normalizedRole);
       const roles = hasRole
-        ? current.roles.filter((item) => item !== role)
-        : [...current.roles, role];
+        ? current.roles.filter((item) => item !== normalizedRole)
+        : [...current.roles, normalizedRole];
       return { ...current, roles };
     });
   };
 
-  const loadAttendants = async () => {
+  const loadAttendants = useCallback(async () => {
     if (!salonId) return;
     try {
       setIsAttendantsLoading(true);
@@ -122,14 +223,16 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     } finally {
       setIsAttendantsLoading(false);
     }
-  };
+  }, [salonId]);
 
   const openAttendantEditor = (attendant?: Attendant) => {
     if (attendant) {
       setAttendantForm({
         attendantId: attendant.attendantId,
         name: attendant.name,
-        roles: attendant.roles,
+        roles: (attendant.roles || [])
+          .map((role) => normalizeServiceKey(role))
+          .filter(Boolean),
         active: attendant.active,
       });
     } else {
@@ -153,17 +256,14 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     if (timeToMinutes(openingTime) >= timeToMinutes(closingTime)) {
       return 'Horário de abertura deve ser anterior ao de fechamento.';
     }
-    if (
-      !useActiveAttendantsCapacity &&
-      (manicureAttendants < 1 || escovaAttendants < 1)
-    ) {
-      return 'Quantidade de atendentes deve ser no mínimo 1 em cada pool.';
-    }
     if (queuePreOpeningHours < 0) {
       return 'Horas de pré-abertura não podem ser negativas.';
     }
-    if (manicureAvgTime <= 0 || pedicureAvgTime <= 0 || brushAvgTime <= 0) {
-      return 'Durações médias devem ser maiores que zero.';
+    if (
+      serviceCatalog.length === 0 ||
+      serviceCatalog.some((service) => Number(service.durationMinutes) <= 0)
+    ) {
+      return 'As durações médias do catálogo devem ser maiores que zero.';
     }
     if (
       restMinutes < 0 ||
@@ -212,15 +312,6 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
         if (Number.isFinite(Number(data.queuePreOpeningHours))) {
           setQueuePreOpeningHours(Number(data.queuePreOpeningHours));
         }
-        if (Number.isFinite(Number(data.manicureAvgTime))) {
-          setManicureAvgTime(Number(data.manicureAvgTime));
-        }
-        if (Number.isFinite(Number(data.pedicureAvgTime))) {
-          setPedicureAvgTime(Number(data.pedicureAvgTime));
-        }
-        if (Number.isFinite(Number(data.brushAvgTime))) {
-          setBrushAvgTime(Number(data.brushAvgTime));
-        }
         if (Number.isFinite(Number(data.restMinutes))) {
           setRestMinutes(Number(data.restMinutes));
         }
@@ -264,39 +355,67 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
   }, [salonId]);
 
   useEffect(() => {
+    const loadServiceCatalog = async () => {
+      if (!salonId) return;
+
+      try {
+        const response = await api.get('/salon/services');
+        const services = Array.isArray(response.data) ? response.data : [];
+        setServiceCatalog(services);
+      } catch {
+        setServiceCatalog([]);
+      }
+    };
+
+    loadServiceCatalog();
+  }, [salonId]);
+
+  useEffect(() => {
     if (!isAttendantModalOpen) return;
     loadAttendants();
-  }, [isAttendantModalOpen, salonId]);
+  }, [isAttendantModalOpen, loadAttendants]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const err = validate();
     setFormError(err);
     if (err) return;
-    setIsLoading(true);
-    const newSettings = {
-      openingTime,
-      closingTime,
-      manicurePedicureAttendants: manicureAttendants,
-      brushAttendants: escovaAttendants,
-      useActiveAttendantsCapacity,
-      mpOptimizationStrategy: mpStrategy,
-      queuePreOpeningHours,
-      manicureAvgTime,
-      pedicureAvgTime,
-      brushAvgTime,
-      restMinutes,
-      bufferMinutes,
-      confirmationNoticeMinutes,
-      confirmationTimeoutMinutes,
-      checkinGraceMinutes,
-      maxOffsetMinutes,
-      lunchStartTime: lunchStartTime || null,
-      lunchEndTime: lunchEndTime || null,
-      lunchDurationMinutes: lunchDurationMinutes || null,
-      aiName: aiName.trim() || 'Inteligência Artificial',
-    };
-    onSave(newSettings);
-    setIsLoading(false);
+    try {
+      setIsLoading(true);
+      const newSettings = {
+        openingTime,
+        closingTime,
+        manicurePedicureAttendants: manicureAttendants,
+        brushAttendants: escovaAttendants,
+        useActiveAttendantsCapacity,
+        mpOptimizationStrategy: mpStrategy,
+        queuePreOpeningHours,
+        restMinutes,
+        bufferMinutes,
+        confirmationNoticeMinutes,
+        confirmationTimeoutMinutes,
+        checkinGraceMinutes,
+        maxOffsetMinutes,
+        lunchStartTime: lunchStartTime || null,
+        lunchEndTime: lunchEndTime || null,
+        lunchDurationMinutes: lunchDurationMinutes || null,
+        aiName: aiName.trim() || 'Inteligência Artificial',
+      };
+
+      await onSave(newSettings);
+
+      await api.put('/salon/services', {
+        services: serviceCatalog.map((service) => ({
+          serviceId: service.serviceId,
+          durationMinutes: Number(service.durationMinutes),
+        })),
+      });
+    } catch (error: any) {
+      const msg =
+        error.response?.data?.error || 'Erro ao salvar configurações.';
+      setFormError(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSaveAttendant = async () => {
@@ -317,7 +436,7 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
       setIsAttendantSaving(true);
       const payload = {
         name,
-        roles: attendantForm.roles,
+        roles: attendantForm.roles.map((role) => normalizeServiceKey(role)),
         active: attendantForm.active,
       };
 
@@ -365,6 +484,19 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     }
   };
 
+  const updateServiceDuration = (
+    serviceId: number,
+    durationMinutes: number
+  ) => {
+    setServiceCatalog((current) =>
+      current.map((service) =>
+        service.serviceId === serviceId
+          ? { ...service, durationMinutes }
+          : service
+      )
+    );
+  };
+
   return (
     <form
       onSubmit={(e) => {
@@ -389,25 +521,39 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
       <div className="min-h-0 flex-1 overflow-y-auto pr-2">
         <div className="grid grid-cols-1 gap-6">
           <div>
-            <h3 className="text-lg font-medium">
-              Estratégia de Manicure + Pedicure
-            </h3>
+            <h3 className="text-lg font-medium">Estratégia de Unhas</h3>
             <Separator className="my-4" />
-            <div className="grid grid-cols-2 items-center gap-4">
-              <Label htmlFor="mp-strategy">Otimização</Label>
-              <select
-                id="mp-strategy"
-                className="col-span-1 rounded-md border bg-background p-2"
-                value={mpStrategy}
-                onChange={(e) =>
-                  setMpStrategy(e.target.value as 'optimized' | 'always_two')
-                }
-              >
-                <option value="optimized">1 atendente Mani+Pedi</option>
-                <option value="always_two">
-                  2 atendentes (1 Mani e 1 Pedi)
-                </option>
-              </select>
+            <div className="space-y-3 rounded-md border p-3">
+              <label className="flex items-start gap-3 text-sm">
+                <input
+                  type="radio"
+                  name="mp-strategy"
+                  className="mt-1"
+                  checked={mpStrategy === 'optimized'}
+                  onChange={() => setMpStrategy('optimized')}
+                />
+                <span>
+                  <span className="block font-medium">1 Atendente</span>
+                  <span className="block text-muted-foreground">
+                    Unhas com 1 atendente por vez.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 text-sm">
+                <input
+                  type="radio"
+                  name="mp-strategy"
+                  className="mt-1"
+                  checked={mpStrategy === 'always_two'}
+                  onChange={() => setMpStrategy('always_two')}
+                />
+                <span>
+                  <span className="block font-medium">2 Atendentes</span>
+                  <span className="block text-muted-foreground">
+                    Unhas com 2 atendentes simultâneos.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
 
@@ -415,58 +561,9 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
             <h3 className="text-lg font-medium">Atendentes</h3>
             <Separator className="my-4" />
             <div className="space-y-4">
-              <div className="rounded-md border p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <Label htmlFor="use-active-attendants-capacity">
-                      Usar atendentes ativos como capacidade
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Quando ligado, a capacidade dos pools é calculada pelo
-                      cadastro de atendentes ativos.
-                    </p>
-                  </div>
-                  <Checkbox
-                    id="use-active-attendants-capacity"
-                    checked={useActiveAttendantsCapacity}
-                    onCheckedChange={(checked) =>
-                      setUseActiveAttendantsCapacity(Boolean(checked))
-                    }
-                  />
-                </div>
+              <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                A capacidade depende do cadastro de atendentes.
               </div>
-
-              <div className="grid grid-cols-2 items-center gap-4">
-                <Label htmlFor="manicure-attendants">Manicure & Pedicure</Label>
-                <Input
-                  id="manicure-attendants"
-                  type="number"
-                  min="1"
-                  value={manicureAttendants}
-                  onChange={(e) =>
-                    setManicureAttendants(Number(e.target.value))
-                  }
-                  className="col-span-1"
-                  disabled={useActiveAttendantsCapacity}
-                />
-              </div>
-              <div className="grid grid-cols-2 items-center gap-4">
-                <Label htmlFor="escova-attendants">Escova</Label>
-                <Input
-                  id="escova-attendants"
-                  type="number"
-                  min="1"
-                  value={escovaAttendants}
-                  onChange={(e) => setEscovaAttendants(Number(e.target.value))}
-                  className="col-span-1"
-                  disabled={useActiveAttendantsCapacity}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {useActiveAttendantsCapacity
-                  ? 'Capacidade manual desativada. Os pools usarão os atendentes ativos cadastrados.'
-                  : 'Capacidade manual ativa. Você ainda pode gerenciar atendentes para operação e histórico.'}
-              </p>
               <Button
                 type="button"
                 variant="outline"
@@ -521,36 +618,48 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
             <h3 className="text-lg font-medium">Duração Média (min)</h3>
             <Separator className="my-4" />
             <div className="space-y-4">
-              <div className="grid grid-cols-2 items-center gap-4">
-                <Label htmlFor="avg-manicure">Manicure</Label>
-                <Input
-                  id="avg-manicure"
-                  type="number"
-                  min="1"
-                  value={manicureAvgTime}
-                  onChange={(e) => setManicureAvgTime(Number(e.target.value))}
-                />
-              </div>
-              <div className="grid grid-cols-2 items-center gap-4">
-                <Label htmlFor="avg-pedicure">Pedicure</Label>
-                <Input
-                  id="avg-pedicure"
-                  type="number"
-                  min="1"
-                  value={pedicureAvgTime}
-                  onChange={(e) => setPedicureAvgTime(Number(e.target.value))}
-                />
-              </div>
-              <div className="grid grid-cols-2 items-center gap-4">
-                <Label htmlFor="avg-brush">Escova</Label>
-                <Input
-                  id="avg-brush"
-                  type="number"
-                  min="1"
-                  value={brushAvgTime}
-                  onChange={(e) => setBrushAvgTime(Number(e.target.value))}
-                />
-              </div>
+              {serviceCatalog.length === 0 ? (
+                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  Nenhum serviço foi carregado do catálogo.
+                </div>
+              ) : (
+                groupedCatalogServices.map((group) => (
+                  <div
+                    key={group.categoryLabel}
+                    className="space-y-3 rounded-md border p-3"
+                  >
+                    <div className="text-sm font-semibold text-foreground">
+                      {group.categoryLabel}
+                    </div>
+                    <div className="space-y-3">
+                      {group.services.map((service) => (
+                        <div
+                          key={service.serviceId}
+                          className="grid grid-cols-2 items-center gap-4"
+                        >
+                          <Label
+                            htmlFor={`service-duration-${service.serviceId}`}
+                          >
+                            {formatCatalogServiceName(service)}
+                          </Label>
+                          <Input
+                            id={`service-duration-${service.serviceId}`}
+                            type="number"
+                            min="1"
+                            value={service.durationMinutes}
+                            onChange={(e) =>
+                              updateServiceDuration(
+                                service.serviceId,
+                                Number(e.target.value)
+                              )
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -779,13 +888,7 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
                             <div className="font-medium">{attendant.name}</div>
                             <div className="text-xs text-muted-foreground">
                               {attendant.roles
-                                .map((role) =>
-                                  role === 'manicure'
-                                    ? 'Manicure'
-                                    : role === 'pedicure'
-                                      ? 'Pedicure'
-                                      : 'Escova'
-                                )
+                                .map((role) => formatRoleLabel(role))
                                 .join(', ')}
                             </div>
                           </div>
@@ -856,8 +959,12 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
                   <div className="space-y-2">
                     <Label>Funções</Label>
                     <div className="space-y-2 rounded-md border p-3">
-                      {(['manicure', 'pedicure', 'brush'] as const).map(
-                        (role) => (
+                      {availableRoleOptions.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">
+                          Nenhuma função disponível no catálogo.
+                        </div>
+                      ) : (
+                        availableRoleOptions.map((role) => (
                           <label
                             key={role}
                             className="flex items-center gap-2 text-sm"
@@ -866,15 +973,9 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
                               checked={attendantForm.roles.includes(role)}
                               onCheckedChange={() => toggleAttendantRole(role)}
                             />
-                            <span>
-                              {role === 'manicure'
-                                ? 'Manicure'
-                                : role === 'pedicure'
-                                  ? 'Pedicure'
-                                  : 'Escova'}
-                            </span>
+                            <span>{formatRoleLabel(role)}</span>
                           </label>
-                        )
+                        ))
                       )}
                     </div>
                   </div>

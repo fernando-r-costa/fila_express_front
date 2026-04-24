@@ -68,6 +68,20 @@ type CompletedAppointment = {
   serviceFinishTime?: string;
 };
 
+type CompletedServiceHistory = {
+  appointmentId: number;
+  clientName: string;
+  clientPhone: string;
+  clientEmail: string;
+  serviceName: string;
+  attendantId?: number | null;
+  attendantName?: string | null;
+  serviceStatus: string;
+  queueEntryTime?: string;
+  serviceStartTime?: string;
+  serviceFinishTime?: string;
+};
+
 type CancelledAppointment = {
   appointmentId: number;
   clientName: string;
@@ -90,7 +104,7 @@ export default function ReportsPage() {
   const [cancelStatus, setCancelStatus] = useState<
     'all' | 'cancelled' | 'no_show'
   >('all');
-  const [completedData, setCompletedData] = useState<CompletedAppointment[]>(
+  const [completedData, setCompletedData] = useState<CompletedServiceHistory[]>(
     []
   );
   const [cancelledData, setCancelledData] = useState<CancelledAppointment[]>(
@@ -110,7 +124,9 @@ export default function ReportsPage() {
             ? 'Manicure'
             : item.serviceName === 'pedicure'
               ? 'Pedicure'
-              : item.serviceName;
+              : item.serviceName === 'maquiagem'
+                ? 'Maquiagem'
+                : item.serviceName;
       return [item.attendantName ? `${label} - ${item.attendantName}` : label];
     }
 
@@ -127,7 +143,9 @@ export default function ReportsPage() {
                 ? 'Manicure'
                 : s.serviceName === 'pedicure'
                   ? 'Pedicure'
-                  : s.serviceName;
+                  : s.serviceName === 'maquiagem'
+                    ? 'Maquiagem'
+                    : s.serviceName;
           return s.attendant?.name ? `${label} - ${s.attendant.name}` : label;
         });
     } else if (Array.isArray(item.servicesRequested)) {
@@ -140,8 +158,20 @@ export default function ReportsPage() {
       if (s === 'brush' || s === 'escova') return 'Escova';
       if (s === 'manicure') return 'Manicure';
       if (s === 'pedicure') return 'Pedicure';
+      if (s === 'maquiagem') return 'Maquiagem';
       return s;
     });
+  };
+
+  const formatServiceLabel = (serviceName: string) => {
+    if (!serviceName) return '';
+    const normalized = serviceName.toLowerCase().trim();
+    if (normalized === 'brush' || normalized === 'escova') return 'Escova';
+    if (normalized === 'manicure') return 'Manicure';
+    if (normalized === 'pedicure') return 'Pedicure';
+    if (normalized === 'maquiagem') return 'Maquiagem';
+    // Fallback: capitaliza primeira letra se não encontrar mapeamento
+    return serviceName.charAt(0).toUpperCase() + serviceName.slice(1);
   };
 
   const formatTime = (dateString: string) => {
@@ -394,22 +424,25 @@ export default function ReportsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Cliente</TableHead>
-                  <TableHead>Serviços</TableHead>
+                  <TableHead>Serviço</TableHead>
+                  <TableHead>Atendente</TableHead>
                   <TableHead>Entrada Fila</TableHead>
-                  <TableHead>Início Atend.</TableHead>
-                  <TableHead>Fim Atend.</TableHead>
+                  <TableHead>Início</TableHead>
+                  <TableHead>Fim</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {completedData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center">
+                    <TableCell colSpan={6} className="text-center">
                       Nenhum atendimento finalizado nesta data.
                     </TableCell>
                   </TableRow>
                 ) : (
                   completedData.map((item, index) => (
-                    <TableRow key={`${item.appointmentId}-${index}`}>
+                    <TableRow
+                      key={`${item.appointmentId}-${item.serviceName}-${index}`}
+                    >
                       <TableCell>
                         <div className="font-medium">{item.clientName}</div>
                         <div className="text-xs text-muted-foreground">
@@ -420,22 +453,17 @@ export default function ReportsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {mapServicesFromBackend(item).join(', ')}
+                        {formatServiceLabel(item.serviceName)}
+                      </TableCell>
+                      <TableCell>{item.attendantName || '-'}</TableCell>
+                      <TableCell>
+                        {formatTime(item.queueEntryTime ?? '')}
                       </TableCell>
                       <TableCell>
-                        {formatTime(
-                          item.queueEntryTime ?? item.createdAt ?? ''
-                        )}
+                        {formatTime(item.serviceStartTime ?? '')}
                       </TableCell>
                       <TableCell>
-                        {formatTime(
-                          item.serviceStartTime ?? item.startTime ?? ''
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {formatTime(
-                          item.serviceFinishTime ?? item.finishTime ?? ''
-                        )}
+                        {formatTime(item.serviceFinishTime ?? '')}
                       </TableCell>
                     </TableRow>
                   ))

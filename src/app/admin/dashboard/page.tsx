@@ -68,13 +68,18 @@ import {
   Settings,
   UserX,
   Loader2,
-  Hand,
-  Footprints,
   Phone,
   Mail,
   QrCode,
 } from 'lucide-react';
-import { useState, useEffect, ReactNode, useRef, useCallback } from 'react';
+import {
+  useState,
+  useEffect,
+  ReactNode,
+  useRef,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
 import { SettingsSheet } from '@/components/admin/SettingsSheet';
@@ -128,43 +133,74 @@ type Client = {
     meta?: { offsetAllowanceMinutes?: number; reservations?: any[] };
   };
   serviceAttendants?: Record<string, string>;
+  serviceStatuses?: Record<
+    string,
+    'pending' | 'doing' | 'done' | 'cancelled' | 'not_requested'
+  >;
   finishedServices?: string[];
   doingServices?: string[];
 };
 type QueueType = 'manicure_pedicure' | 'escova';
 
+type SalonCatalogService = {
+  serviceId: number;
+  salonId: number;
+  name: string;
+  category?: string | null;
+  durationMinutes?: number;
+};
+
+type DashboardPool = {
+  id: string;
+  title: string;
+  serviceNames: string[];
+  backendQueueType: string;
+  category?: string | null;
+};
+
 const SERVICE_LABEL_MAP: Record<string, string> = {
   manicure: 'Manicure',
   pedicure: 'Pedicure',
   brush: 'Escova',
+  maquiagem: 'Maquiagem',
+};
+
+const normalizeServiceKey = (value: string) => {
+  const normalized = (value || '').toString().trim().toLowerCase();
+  if (normalized === 'escova') return 'brush';
+  return normalized;
+};
+
+const formatServiceLabel = (serviceName: string) => {
+  const normalized = normalizeServiceKey(serviceName);
+  if (SERVICE_LABEL_MAP[normalized]) return SERVICE_LABEL_MAP[normalized];
+  if (!normalized) return '';
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 };
 
 const formatServiceWithAttendant = (
   serviceName: string,
   attendantName?: string
 ) => {
-  const serviceLabel = SERVICE_LABEL_MAP[serviceName] || serviceName;
+  const serviceLabel = formatServiceLabel(serviceName);
   return attendantName ? `${serviceLabel} - ${attendantName}` : serviceLabel;
 };
 
 type CapacitySummary = {
-  timestamp: string;
-  manicure_pedicure: {
-    total: number;
-    busy: number;
-    free: number;
-    inProgress: number;
-    resting: number;
-    reservations: number;
-  };
-  brush: {
-    total: number;
-    busy: number;
-    free: number;
-    inProgress: number;
-    resting: number;
-    reservations: number;
-  };
+  timestamp?: string;
+  pools?: Record<
+    string,
+    {
+      total: number;
+      busy: number;
+      free: number;
+      resting: number;
+      inProgress?: number;
+      finished?: number;
+      label?: string;
+      category?: string | null;
+    }
+  >;
 };
 
 function StatusBadge({ client }: { client: Client; waitingClients: Client[] }) {
@@ -207,7 +243,6 @@ interface QueueColumnProps {
   title: string;
   clients: Client[];
   onCallNext: () => void;
-  onOptimize: () => void;
   onFinish: (
     clientId: string,
     clientName?: string,
@@ -216,37 +251,31 @@ interface QueueColumnProps {
   onRemove: (clientId: string) => void;
   onNoShow: (clientId: string) => void;
   isLoadingNext?: boolean;
-  isOptimizing?: boolean;
   capacityChips?: ReactNode;
   disableCallNext?: boolean;
   disableReason?: string;
-  queueType?: QueueType;
+  poolServiceNames: string[];
 }
 
 function QueueColumn({
   title,
   clients,
   onCallNext,
-  onOptimize,
   onFinish,
   onRemove,
   onNoShow,
   isLoadingNext = false,
-  isOptimizing = false,
   capacityChips,
   disableCallNext = false,
   disableReason,
-  queueType,
+  poolServiceNames,
 }: QueueColumnProps) {
   const servicingClients = clients.filter((c) => c.status === 'em_atendimento');
 
   const getPoolSpecificStartTime = (client: Client): number => {
     if (!client.serviceAllocations) return 0;
-    const poolServices =
-      queueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
-
     const startTimes: number[] = [];
-    for (const service of poolServices) {
+    for (const service of poolServiceNames) {
       const alloc =
         client.serviceAllocations[
           service as keyof typeof client.serviceAllocations
@@ -292,23 +321,6 @@ function QueueColumn({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
-                onClick={onOptimize}
-                disabled={isOptimizing}
-                variant="outline"
-              >
-                {isOptimizing && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                {isOptimizing ? 'Otimizando...' : 'Otimizar'}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Reorganizar fila para preencher buracos e otimizar recursos</p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
                 onClick={onCallNext}
                 disabled={isLoadingNext || disableCallNext}
               >
@@ -347,14 +359,14 @@ function QueueColumn({
 
               let poolSpecificEta: string | null = null;
               let poolServiceStarted = false;
+              let earliestServiceName: string | null = null;
+              let poolServiceFinished = false;
+              let poolFinishedEta: string | null = null;
               const allocations = client.serviceAllocations;
 
               if (allocations) {
-                const poolServices =
-                  queueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
-
-                const startTimes: Date[] = [];
-                for (const service of poolServices) {
+                const startTimes: { service: string; ts: number }[] = [];
+                for (const service of poolServiceNames) {
                   const alloc =
                     allocations[service as keyof typeof allocations];
                   if (
@@ -363,63 +375,104 @@ function QueueColumn({
                     'start' in alloc &&
                     alloc.start
                   ) {
-                    startTimes.push(new Date(alloc.start));
+                    startTimes.push({
+                      service,
+                      ts: new Date(alloc.start).getTime(),
+                    });
                   }
                 }
 
                 if (startTimes.length > 0) {
-                  const earliestStart = new Date(
-                    Math.min(...startTimes.map((d) => d.getTime()))
-                  );
-                  poolSpecificEta = earliestStart.toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  });
-                  const nowTs = Date.now();
-                  poolServiceStarted = nowTs >= earliestStart.getTime();
+                  const earliest = startTimes.sort((a, b) => a.ts - b.ts)[0];
+                  earliestServiceName = earliest.service;
+                  const earliestStart = new Date(earliest.ts);
+
+                  // Verificar se o serviço está finalizado e pegar realEnd
+                  const earliestAlloc =
+                    allocations[earliest.service as keyof typeof allocations];
+                  if (
+                    client.serviceStatuses?.[earliest.service] === 'done' &&
+                    earliestAlloc &&
+                    typeof earliestAlloc === 'object' &&
+                    'end' in earliestAlloc &&
+                    earliestAlloc.end
+                  ) {
+                    const realEnd = earliestAlloc.end;
+                    if (realEnd) {
+                      poolFinishedEta = new Date(realEnd).toLocaleTimeString(
+                        'pt-BR',
+                        {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        }
+                      );
+                      poolServiceFinished = true;
+                    }
+                  } else {
+                    poolSpecificEta = earliestStart.toLocaleTimeString(
+                      'pt-BR',
+                      {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      }
+                    );
+                    const nowTs = Date.now();
+                    poolServiceStarted = nowTs >= earliestStart.getTime();
+                  }
                 }
               }
 
-              let nextServiceInfo: { label: string; timeStr: string } | null =
-                null;
+              let nextServiceInfo: {
+                label: string;
+                timeStr: string;
+                attendant?: string;
+              } | null = null;
               let activeServices: string[] = [];
               if (
                 client.status === 'em_atendimento' &&
                 client.serviceAllocations
               ) {
                 const nowTs = Date.now();
-                const hasBrush = !!client.serviceAllocations.brush?.start;
-                const hasNails =
-                  !!client.serviceAllocations.manicure?.start ||
-                  !!client.serviceAllocations.pedicure?.start;
-                const hasMultiplePools = hasBrush && hasNails;
-
-                if (hasMultiplePools) {
-                  const starts: { label: string; ts: number }[] = [];
-                  const addIfFuture = (label: string, start: any) => {
-                    if (!start) return;
-                    const ts = new Date(start).getTime();
-                    if (ts > nowTs + 120000) starts.push({ label, ts });
-                  };
-                  addIfFuture(
-                    'Próximo serviço',
-                    client.serviceAllocations.pedicure?.start
-                  );
-                  addIfFuture(
-                    'Próximo serviço',
-                    client.serviceAllocations.manicure?.start
-                  );
-                  addIfFuture('Escova', client.serviceAllocations.brush?.start);
-
-                  if (starts.length > 0) {
-                    const next = starts.sort((a, b) => a.ts - b.ts)[0];
-                    const d = new Date(next.ts);
-                    const timeStr = d.toLocaleTimeString('pt-BR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    });
-                    nextServiceInfo = { label: next.label, timeStr };
+                const starts: {
+                  label: string;
+                  ts: number;
+                  attendant?: string;
+                }[] = [];
+                const addIfFuture = (
+                  label: string,
+                  start?: string | Date,
+                  attendant?: string
+                ) => {
+                  if (!start) return;
+                  const ts = new Date(start).getTime();
+                  if (ts > nowTs + 120000)
+                    starts.push({ label, ts, attendant });
+                };
+                for (const serviceName of poolServiceNames) {
+                  const alloc =
+                    client.serviceAllocations[
+                      serviceName as keyof typeof client.serviceAllocations
+                    ];
+                  if (alloc && typeof alloc === 'object' && 'start' in alloc) {
+                    addIfFuture(
+                      formatServiceLabel(serviceName),
+                      alloc.start,
+                      client.serviceAttendants?.[serviceName]
+                    );
                   }
+                }
+                if (starts.length > 0) {
+                  const next = starts.sort((a, b) => a.ts - b.ts)[0];
+                  const d = new Date(next.ts);
+                  const timeStr = d.toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+                  nextServiceInfo = {
+                    label: next.label,
+                    timeStr,
+                    attendant: next.attendant,
+                  };
                 }
 
                 const checkActive = (
@@ -433,21 +486,20 @@ function QueueColumn({
                   if (nowTs >= s - 30000 && nowTs < e)
                     activeServices.push(serviceName);
                 };
-                checkActive(
-                  'manicure',
-                  client.serviceAllocations.manicure?.start,
-                  client.serviceAllocations.manicure?.end
-                );
-                checkActive(
-                  'pedicure',
-                  client.serviceAllocations.pedicure?.start,
-                  client.serviceAllocations.pedicure?.end
-                );
-                checkActive(
-                  'brush',
-                  client.serviceAllocations.brush?.start,
-                  client.serviceAllocations.brush?.end
-                );
+                for (const serviceName of poolServiceNames) {
+                  const alloc =
+                    client.serviceAllocations[
+                      serviceName as keyof typeof client.serviceAllocations
+                    ];
+                  if (
+                    alloc &&
+                    typeof alloc === 'object' &&
+                    'start' in alloc &&
+                    'end' in alloc
+                  ) {
+                    checkActive(serviceName, alloc.start, alloc.end);
+                  }
+                }
               }
 
               return (
@@ -469,15 +521,18 @@ function QueueColumn({
                         <span>{client.email}</span>
                       </div>
                     )}
-                    <div className="text-xs text-muted-foreground">
-                      {client.services
-                        .map((s) =>
-                          formatServiceWithAttendant(
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {client.services.map((s) => (
+                        <span
+                          key={`${client.id}-service-${s}`}
+                          className="inline-flex items-center rounded border border-input bg-background px-2.5 py-0.5 text-xs font-medium text-foreground"
+                        >
+                          {formatServiceWithAttendant(
                             s,
                             client.serviceAttendants?.[s]
-                          )
-                        )
-                        .join(', ')}
+                          )}
+                        </span>
+                      ))}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -486,14 +541,26 @@ function QueueColumn({
                         client={client}
                         waitingClients={waitingClients}
                       />
-                      {poolSpecificEta && (
+                      {poolSpecificEta && !poolServiceStarted && (
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <Clock className="h-3 w-3" />
-                          <span>
-                            {poolServiceStarted
-                              ? `Início: ${poolSpecificEta}`
-                              : `Previsto: ${poolSpecificEta}`}
-                          </span>
+                          <span>Previsto: {poolSpecificEta}</span>
+                        </div>
+                      )}
+                      {poolSpecificEta &&
+                        poolServiceStarted &&
+                        earliestServiceName &&
+                        client.serviceStatuses?.[earliestServiceName] ===
+                          'doing' && (
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            <span>Início: {poolSpecificEta}</span>
+                          </div>
+                        )}
+                      {poolServiceFinished && poolFinishedEta && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          <span>Finalizado: {poolFinishedEta}</span>
                         </div>
                       )}
                       {client.status === 'em_atendimento' &&
@@ -502,6 +569,8 @@ function QueueColumn({
                             <Clock className="h-3 w-3" />
                             <span>
                               {nextServiceInfo.label}: {nextServiceInfo.timeStr}
+                              {nextServiceInfo.attendant &&
+                                ` - ${nextServiceInfo.attendant}`}
                             </span>
                           </div>
                         )}
@@ -525,156 +594,87 @@ function QueueColumn({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
-                      {client.status === 'em_atendimento' ? (
+                      {/* Em atendimento: Botões de finalizar + Não Compareceu */}
+                      {client.status === 'em_atendimento' && (
                         <>
-                          {queueType === 'manicure_pedicure' ? (
-                            // Pool Manicure & Pedicure: 2 botões separados (mão e pé)
-                            <>
-                              {(() => {
-                                const finished = client.finishedServices || [];
-                                const hasManicure =
-                                  client.services.includes('manicure');
-                                const hasPedicure =
-                                  client.services.includes('pedicure');
-                                const maniFinished =
-                                  finished.includes('manicure');
-                                const pediFinished =
-                                  finished.includes('pedicure');
+                          {poolServiceNames.map((serviceName) => {
+                            const requested =
+                              client.services.includes(serviceName);
+                            if (!requested) return null;
 
-                                return (
-                                  <>
-                                    {/* Botão Manicure (Mão) */}
-                                    {hasManicure && (
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            variant="outline"
-                                            size="icon"
-                                            disabled={maniFinished}
-                                            onClick={() =>
-                                              onFinish(client.id, client.name, [
-                                                'manicure',
-                                              ])
-                                            }
-                                          >
-                                            <Hand
-                                              className={`h-4 w-4 ${maniFinished ? 'text-muted-foreground' : 'text-green-500'}`}
-                                            />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>
-                                            {maniFinished
-                                              ? 'Manicure Finalizada'
-                                              : 'Finalizar Manicure'}
-                                          </p>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    )}
+                            const serviceStarted =
+                              client.serviceStatuses?.[serviceName] === 'doing';
+                            if (!serviceStarted) return null;
 
-                                    {/* Botão Pedicure (Pé) */}
-                                    {hasPedicure && (
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            variant="outline"
-                                            size="icon"
-                                            disabled={pediFinished}
-                                            onClick={() =>
-                                              onFinish(client.id, client.name, [
-                                                'pedicure',
-                                              ])
-                                            }
-                                          >
-                                            <Footprints
-                                              className={`h-4 w-4 ${pediFinished ? 'text-muted-foreground' : 'text-green-500'}`}
-                                            />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>
-                                            {pediFinished
-                                              ? 'Pedicure Finalizado'
-                                              : 'Finalizar Pedicure'}
-                                          </p>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    )}
+                            return (
+                              <Tooltip
+                                key={`${client.id}-finish-${serviceName}`}
+                              >
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() =>
+                                      onFinish(client.id, client.name, [
+                                        serviceName,
+                                      ])
+                                    }
+                                  >
+                                    <CheckCircle className="h-4 w-4 text-green-500" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{`Finalizar ${formatServiceLabel(serviceName)}`}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })}
 
-                                    {/* Botão No-Show */}
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="text-destructive"
-                                          onClick={() => onNoShow(client.id)}
-                                        >
-                                          <UserX className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Não Compareceu</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </>
-                                );
-                              })()}
-                            </>
-                          ) : (
-                            // Pool Escova: mantém comportamento original (botão único)
-                            <>
-                              {(() => {
-                                const finished = client.finishedServices || [];
-                                const hasBrush =
-                                  client.services.includes('escova');
-                                const brushFinished =
-                                  finished.includes('brush');
-
-                                if (!hasBrush || brushFinished) return null;
-
-                                return (
-                                  <>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          onClick={() =>
-                                            onFinish(client.id, client.name, [
-                                              'brush',
-                                            ])
-                                          }
-                                        >
-                                          <CheckCircle className="h-4 w-4 text-green-500" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Finalizar Escova</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="text-destructive"
-                                          onClick={() => onNoShow(client.id)}
-                                        >
-                                          <UserX className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Não Compareceu</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </>
-                                );
-                              })()}
-                            </>
+                          {(!client.doingServices ||
+                            client.doingServices.length === 0) && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="text-destructive"
+                                  onClick={() => onNoShow(client.id)}
+                                >
+                                  <UserX className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Não Compareceu</p>
+                              </TooltipContent>
+                            </Tooltip>
                           )}
                         </>
-                      ) : (
+                      )}
+
+                      {/* Confirmado/Na espera: Botão Não Compareceu (somente antes de iniciar qualquer serviço) */}
+                      {(client.rawStatus === 'confirmed' ||
+                        client.rawStatus === 'arrived') &&
+                        (!client.doingServices ||
+                          client.doingServices.length === 0) && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="text-destructive"
+                                onClick={() => onNoShow(client.id)}
+                              >
+                                <UserX className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Não Compareceu</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+
+                      {/* Na fila: Botão Excluir */}
+                      {client.rawStatus === 'waiting' && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -709,6 +709,9 @@ export default function DashboardPage() {
   const { toast } = useToast();
 
   const [queueData, setQueueData] = useState<Client[]>([]);
+  const [serviceCatalog, setServiceCatalog] = useState<SalonCatalogService[]>(
+    []
+  );
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [capacity, setCapacity] = useState<CapacitySummary | null>(null);
   const [salonConfig, setSalonConfig] = useState<{
@@ -719,11 +722,9 @@ export default function DashboardPage() {
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSettingsSheetOpen, setIsSettingsSheetOpen] = useState(false);
-  const [isCallingNext, setIsCallingNext] = useState<QueueType | null>(null);
+  const [isCallingNext, setIsCallingNext] = useState<string | null>(null);
   const [isCallNextDialogOpen, setIsCallNextDialogOpen] = useState(false);
-  const [callNextQueueType, setCallNextQueueType] = useState<QueueType | null>(
-    null
-  );
+  const [callNextPoolId, setCallNextPoolId] = useState<string | null>(null);
   const [callNextClientId, setCallNextClientId] = useState('');
   const [callNextServices, setCallNextServices] = useState<string[]>([]);
   const [callNextAttendants, setCallNextAttendants] = useState<Attendant[]>([]);
@@ -735,6 +736,13 @@ export default function DashboardPage() {
   const [pendingRequests, setPendingRequests] = useState(0);
   const [aiPendingRequests, setAiPendingRequests] = useState(0);
   const [isAiProcessingRemote, setIsAiProcessingRemote] = useState(false);
+  const [pendingDestructiveAction, setPendingDestructiveAction] = useState<{
+    type: 'cancel' | 'no_show';
+    clientId: string;
+    clientName: string;
+  } | null>(null);
+  const [isConfirmingDestructiveAction, setIsConfirmingDestructiveAction] =
+    useState(false);
   const isRefreshingRef = useRef(false);
   const aiPendingRef = useRef(0);
 
@@ -790,14 +798,61 @@ export default function DashboardPage() {
     };
   }, []);
 
-  const belongsToQueue = (c: Client, queueType: QueueType) => {
-    if (queueType === 'escova') {
-      return c.services.includes('escova');
-    }
-    return c.services.includes('manicure') || c.services.includes('pedicure');
+  const serviceLabelMap: Record<string, string> = SERVICE_LABEL_MAP;
+
+  const mapServiceToBackendQueueType = (serviceName: string): string => {
+    return normalizeServiceKey(serviceName);
   };
 
-  const serviceLabelMap: Record<string, string> = SERVICE_LABEL_MAP;
+  const poolNamesSource = useMemo(
+    () =>
+      serviceCatalog.length > 0
+        ? serviceCatalog.map((service) => normalizeServiceKey(service.name))
+        : queueData.flatMap((client) =>
+            client.services.map(normalizeServiceKey)
+          ),
+    [serviceCatalog, queueData]
+  );
+
+  const dashboardPools: DashboardPool[] = useMemo(
+    () =>
+      poolNamesSource
+        .filter((name, index, arr) => !!name && arr.indexOf(name) === index)
+        .map((serviceName) => {
+          const backendQueueType = mapServiceToBackendQueueType(serviceName);
+          const catalogService = serviceCatalog.find(
+            (s) => normalizeServiceKey(s.name) === serviceName
+          );
+          return {
+            id: serviceName,
+            title: formatServiceLabel(serviceName),
+            serviceNames: [serviceName],
+            backendQueueType,
+            category: catalogService?.category || null,
+          };
+        }),
+    [poolNamesSource, serviceCatalog]
+  );
+
+  const belongsToPool = (client: Client, pool: DashboardPool) =>
+    pool.serviceNames.some((serviceName) =>
+      client.services.includes(serviceName)
+    );
+
+  const sortedDashboardPools = useMemo(() => {
+    return [...dashboardPools].sort((a, b) => {
+      const categoryA = a.category || 'Outros';
+      const categoryB = b.category || 'Outros';
+
+      if (categoryA === 'Outros' && categoryB !== 'Outros') return 1;
+      if (categoryA !== 'Outros' && categoryB === 'Outros') return -1;
+
+      const categoryCompare = categoryA.localeCompare(categoryB, 'pt-BR');
+      if (categoryCompare !== 0) return categoryCompare;
+
+      return a.title.localeCompare(b.title, 'pt-BR');
+    });
+  }, [dashboardPools]);
 
   const getAttendantsForService = (serviceName: string) => {
     return callNextAttendants.filter(
@@ -807,10 +862,8 @@ export default function DashboardPage() {
 
   const getPendingServicesForClient = (
     client: Client,
-    queueType: QueueType
+    poolServices: string[]
   ) => {
-    const poolServices =
-      queueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
     const finished = client.finishedServices || [];
     const doing = client.doingServices || [];
 
@@ -826,9 +879,7 @@ export default function DashboardPage() {
     });
   };
 
-  const poolHasPendingService = (c: Client, queueType: QueueType) => {
-    const poolServices =
-      queueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
+  const poolHasPendingService = (c: Client, poolServices: string[]) => {
     const finished = c.finishedServices || [];
     const doing = c.doingServices || [];
 
@@ -842,19 +893,13 @@ export default function DashboardPage() {
     });
   };
 
-  const isEligibleForCallNext = (c: Client, queueType: QueueType) =>
-    c.rawStatus === 'arrived' &&
-    belongsToQueue(c, queueType) &&
-    poolHasPendingService(c, queueType);
+  const isEligibleForCallNext = (c: Client, pool: DashboardPool) =>
+    (c.rawStatus === 'arrived' || c.rawStatus === 'in_progress') &&
+    belongsToPool(c, pool) &&
+    poolHasPendingService(c, pool.serviceNames);
 
   // --- MAPPER CRUCIAL (Híbrido) ---
   const mapApiDataToClient = (apiData: any): Client => {
-    const serviceMapping: Record<string, string> = {
-      brush: 'escova',
-      manicure: 'manicure',
-      pedicure: 'pedicure',
-    };
-
     // Extrair nomes de serviço, compatível com Array de objetos (Novo) ou Strings (Velho)
     let mappedServices: string[] = [];
     if (Array.isArray(apiData.services)) {
@@ -862,18 +907,18 @@ export default function DashboardPage() {
       // Filtrar apenas serviços solicitados (status !== 'not_requested')
       mappedServices = apiData.services
         .filter((s: any) => s.status !== 'not_requested')
-        .map((s: any) => serviceMapping[s.serviceName] || s.serviceName);
+        .map((s: any) => normalizeServiceKey(s.serviceName));
     } else if (Array.isArray(apiData.servicesRequested)) {
       // Formato Velho: servicesRequested: ['brush', ...]
-      mappedServices = apiData.servicesRequested.map(
-        (s: string) => serviceMapping[s] || s
+      mappedServices = apiData.servicesRequested.map((s: string) =>
+        normalizeServiceKey(s)
       );
     }
 
     let queue: QueueType = 'manicure_pedicure';
-    if (mappedServices.includes('escova') && mappedServices.length === 1) {
+    if (mappedServices.includes('brush') && mappedServices.length === 1) {
       queue = 'escova';
-    } else if (mappedServices.includes('escova')) {
+    } else if (mappedServices.includes('brush')) {
       queue = 'manicure_pedicure';
     }
 
@@ -881,12 +926,16 @@ export default function DashboardPage() {
     // Isso evita reescrever todo o componente visual
     const syntheticAllocations: any = {};
     const serviceAttendants: Record<string, string> = {};
+    const serviceStatuses: Record<
+      string,
+      'pending' | 'doing' | 'done' | 'cancelled' | 'not_requested'
+    > = {};
     if (Array.isArray(apiData.services)) {
       apiData.services
         .filter((s: any) => s.status !== 'not_requested') // Filtrar not_requested
         .forEach((s: any) => {
           // Mapear nome (brush -> brush, etc)
-          const name = s.serviceName;
+          const name = normalizeServiceKey(s.serviceName);
           // Usar realStart se o serviço está em progresso ou finalizado, senão usar estimatedStart
           const startTime =
             (s.status === 'doing' || s.status === 'done') && s.realStart
@@ -903,6 +952,7 @@ export default function DashboardPage() {
           if (s.attendant?.name) {
             serviceAttendants[name] = s.attendant.name;
           }
+          serviceStatuses[name] = s.status;
         });
     }
 
@@ -925,9 +975,9 @@ export default function DashboardPage() {
     if (Array.isArray(apiData.services)) {
       apiData.services.forEach((s: any) => {
         if (s.status === 'done') {
-          finishedServices.push(s.serviceName);
+          finishedServices.push(normalizeServiceKey(s.serviceName));
         } else if (s.status === 'doing') {
-          doingServices.push(s.serviceName);
+          doingServices.push(normalizeServiceKey(s.serviceName));
         }
       });
     }
@@ -947,6 +997,7 @@ export default function DashboardPage() {
       notified: apiData.notified || false,
       serviceAllocations: finalAllocations, // Agora sempre populado
       serviceAttendants,
+      serviceStatuses,
       finishedServices: finishedServices,
       doingServices: doingServices,
     };
@@ -964,6 +1015,20 @@ export default function DashboardPage() {
       });
     } catch (error) {
       console.error('Falha ao buscar configuração do salão:', error);
+    } finally {
+      endRequest();
+    }
+  }, [salonId]);
+
+  const fetchServiceCatalog = useCallback(async () => {
+    if (!salonId) return;
+    try {
+      startRequest();
+      const response = await api.get('/salon/services');
+      setServiceCatalog(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error('Falha ao buscar catálogo de serviços:', error);
+      setServiceCatalog([]);
     } finally {
       endRequest();
     }
@@ -1028,8 +1093,15 @@ export default function DashboardPage() {
     if (isAuthenticated && salonId) {
       fetchQueueData();
       fetchSalonConfig();
+      fetchServiceCatalog();
     }
-  }, [isAuthenticated, salonId, fetchQueueData, fetchSalonConfig]);
+  }, [
+    isAuthenticated,
+    salonId,
+    fetchQueueData,
+    fetchSalonConfig,
+    fetchServiceCatalog,
+  ]);
 
   useEffect(() => {
     if (!isAuthenticated || !salonId) return;
@@ -1039,12 +1111,19 @@ export default function DashboardPage() {
     return () => clearInterval(id);
   }, [isAuthenticated, salonId, fetchQueueData]);
 
+  const selectedCallNextPool = useMemo(
+    () =>
+      callNextPoolId
+        ? dashboardPools.find((pool) => pool.id === callNextPoolId) || null
+        : null,
+    [callNextPoolId, dashboardPools]
+  );
+
   useEffect(() => {
-    if (!isCallNextDialogOpen || !callNextQueueType) return;
+    if (!isCallNextDialogOpen || !selectedCallNextPool) return;
 
     const eligible = queueData.filter((client) => {
-      const poolServices =
-        callNextQueueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
+      const poolServices = selectedCallNextPool.serviceNames;
       const finished = client.finishedServices || [];
       const doing = client.doingServices || [];
 
@@ -1059,11 +1138,9 @@ export default function DashboardPage() {
         return isRequested && !isFinished && !isDoing;
       });
 
-      const belongsToPool =
-        callNextQueueType === 'escova'
-          ? client.services.includes('escova')
-          : client.services.includes('manicure') ||
-            client.services.includes('pedicure');
+      const belongsToPool = poolServices.some((serviceName) =>
+        client.services.includes(serviceName)
+      );
 
       const statusEligible = client.rawStatus === 'arrived';
 
@@ -1075,8 +1152,7 @@ export default function DashboardPage() {
     if (!defaultClient) {
       setCallNextServices([]);
     } else {
-      const poolServices =
-        callNextQueueType === 'escova' ? ['brush'] : ['manicure', 'pedicure'];
+      const poolServices = selectedCallNextPool.serviceNames;
       const finished = defaultClient.finishedServices || [];
       const doing = defaultClient.doingServices || [];
 
@@ -1094,7 +1170,7 @@ export default function DashboardPage() {
       setCallNextServices(pendingServices);
     }
     setCallNextError(null);
-  }, [isCallNextDialogOpen, callNextQueueType, queueData]);
+  }, [isCallNextDialogOpen, selectedCallNextPool, queueData]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -1103,7 +1179,7 @@ export default function DashboardPage() {
   }, [isAuthenticated, authLoading, router]);
 
   useEffect(() => {
-    if (!isCallNextDialogOpen || !callNextQueueType || !salonId) return;
+    if (!isCallNextDialogOpen || !selectedCallNextPool || !salonId) return;
 
     const loadAttendants = async () => {
       try {
@@ -1118,7 +1194,7 @@ export default function DashboardPage() {
     };
 
     loadAttendants();
-  }, [isCallNextDialogOpen, callNextQueueType, salonId]);
+  }, [isCallNextDialogOpen, selectedCallNextPool, salonId]);
 
   if (authLoading || (isAuthenticated && isDataLoading)) {
     return (
@@ -1133,15 +1209,10 @@ export default function DashboardPage() {
     return null;
   }
 
-  const manicureQueue = queueData.filter((c) =>
-    belongsToQueue(c, 'manicure_pedicure')
-  );
-  const escovaQueue = queueData.filter((c) => belongsToQueue(c, 'escova'));
-
-  const renderCapacityChips = (queueType: QueueType) => {
+  const renderCapacityChips = (pool: DashboardPool) => {
     if (!capacity) return null;
-    const cap =
-      queueType === 'escova' ? capacity.brush : capacity.manicure_pedicure;
+    const capFromPools = capacity.pools?.[pool.id];
+    const cap = capFromPools || { total: 0, busy: 0, resting: 0, free: 0 };
     return (
       <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase text-muted-foreground">
         <span className="rounded border px-2 py-0.5">
@@ -1156,10 +1227,10 @@ export default function DashboardPage() {
     );
   };
 
-  const isCallNextDisabled = (queueType: QueueType) => {
+  const isCallNextDisabled = (pool: DashboardPool) => {
     if (!capacity) return false;
-    const cap =
-      queueType === 'escova' ? capacity.brush : capacity.manicure_pedicure;
+    const capFromPools = capacity.pools?.[pool.id];
+    const cap = capFromPools || { total: 0, busy: 0, resting: 0, free: 0 };
     return cap.free <= 0;
   };
 
@@ -1201,10 +1272,10 @@ export default function DashboardPage() {
     }
   };
 
-  const handleCallNext = async (queueType: QueueType) => {
+  const handleCallNext = async (pool: DashboardPool) => {
     if (!salonId) return;
     const eligibleClients = queueData.filter((client) =>
-      isEligibleForCallNext(client, queueType)
+      isEligibleForCallNext(client, pool)
     );
     if (eligibleClients.length === 0) {
       toast({
@@ -1215,12 +1286,12 @@ export default function DashboardPage() {
       return;
     }
 
-    setCallNextQueueType(queueType);
+    setCallNextPoolId(pool.id);
     setIsCallNextDialogOpen(true);
   };
 
   const handleCallNextSubmit = async () => {
-    if (!salonId || !callNextQueueType) return;
+    if (!salonId || !selectedCallNextPool) return;
     if (!callNextClientId) {
       setCallNextError('Selecione uma cliente confirmada.');
       return;
@@ -1248,14 +1319,13 @@ export default function DashboardPage() {
       ])
     );
 
-    setIsCallingNext(callNextQueueType);
+    setIsCallingNext(selectedCallNextPool.id);
     try {
       startRequest();
-      const backendQueueType =
-        callNextQueueType === 'escova' ? 'brush' : 'manicure_pedicure';
       const response = await api.post('/call-next', {
         salonId,
-        queueType: backendQueueType,
+        serviceName: selectedCallNextPool.id,
+        serviceNames: selectedCallNextPool.serviceNames,
         appointmentId: Number(callNextClientId),
         services: callNextServices,
         attendantAssignments,
@@ -1448,9 +1518,43 @@ export default function DashboardPage() {
     }
   };
 
-  const confirmedClientsForCallNext = callNextQueueType
+  const requestCancelConfirmation = (clientId: string) => {
+    const clientData = queueData.find((c) => String(c.id) === String(clientId));
+    setPendingDestructiveAction({
+      type: 'cancel',
+      clientId,
+      clientName: clientData?.name || 'Cliente',
+    });
+  };
+
+  const requestNoShowConfirmation = (clientId: string) => {
+    const clientData = queueData.find((c) => String(c.id) === String(clientId));
+    setPendingDestructiveAction({
+      type: 'no_show',
+      clientId,
+      clientName: clientData?.name || 'Cliente',
+    });
+  };
+
+  const confirmDestructiveAction = async () => {
+    if (!pendingDestructiveAction) return;
+
+    setIsConfirmingDestructiveAction(true);
+    try {
+      if (pendingDestructiveAction.type === 'cancel') {
+        await handleRemoveFromQueue(pendingDestructiveAction.clientId);
+      } else {
+        await handleNoShow(pendingDestructiveAction.clientId);
+      }
+    } finally {
+      setIsConfirmingDestructiveAction(false);
+      setPendingDestructiveAction(null);
+    }
+  };
+
+  const confirmedClientsForCallNext = selectedCallNextPool
     ? queueData.filter((client) =>
-        isEligibleForCallNext(client, callNextQueueType)
+        isEligibleForCallNext(client, selectedCallNextPool)
       )
     : [];
 
@@ -1459,8 +1563,11 @@ export default function DashboardPage() {
   );
 
   const availableCallNextServices =
-    selectedCallNextClient && callNextQueueType
-      ? getPendingServicesForClient(selectedCallNextClient, callNextQueueType)
+    selectedCallNextClient && selectedCallNextPool
+      ? getPendingServicesForClient(
+          selectedCallNextClient,
+          selectedCallNextPool.serviceNames
+        )
       : [];
 
   const handleCallNextClientToggle = (clientId: string) => {
@@ -1471,8 +1578,11 @@ export default function DashboardPage() {
       (client) => client.id === nextId
     );
     setCallNextServices(
-      nextClient && callNextQueueType
-        ? getPendingServicesForClient(nextClient, callNextQueueType)
+      nextClient && selectedCallNextPool
+        ? getPendingServicesForClient(
+            nextClient,
+            selectedCallNextPool.serviceNames
+          )
         : []
     );
     setCallNextError(null);
@@ -1516,7 +1626,7 @@ export default function DashboardPage() {
         onOpenChange={(open) => {
           setIsCallNextDialogOpen(open);
           if (!open) {
-            setCallNextQueueType(null);
+            setCallNextPoolId(null);
             setCallNextClientId('');
             setCallNextServices([]);
             setCallNextAttendants([]);
@@ -1653,10 +1763,47 @@ export default function DashboardPage() {
               disabled={
                 confirmedClientsForCallNext.length === 0 ||
                 callNextServices.length === 0 ||
-                isCallingNext === callNextQueueType
+                isCallingNext === selectedCallNextPool?.id
               }
             >
-              {isCallingNext === callNextQueueType ? 'Chamando...' : 'Chamar'}
+              {isCallingNext === selectedCallNextPool?.id
+                ? 'Chamando...'
+                : 'Chamar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={!!pendingDestructiveAction}
+        onOpenChange={(open) => {
+          if (!open && !isConfirmingDestructiveAction) {
+            setPendingDestructiveAction(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDestructiveAction?.type === 'no_show'
+                ? 'Confirmar no-show'
+                : 'Confirmar cancelamento'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDestructiveAction?.type === 'no_show'
+                ? `Tem certeza que deseja marcar ${pendingDestructiveAction.clientName} como não compareceu? Esta ação afeta a fila e dispara reotimização.`
+                : `Tem certeza que deseja cancelar o atendimento de ${pendingDestructiveAction?.clientName}? Esta ação remove a cliente da fila e dispara reotimização.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isConfirmingDestructiveAction}>
+              Voltar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDestructiveAction}
+              disabled={isConfirmingDestructiveAction}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isConfirmingDestructiveAction ? 'Confirmando...' : 'Confirmar'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1675,6 +1822,26 @@ export default function DashboardPage() {
             )}
           </h1>
           <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleOptimizeQueue}
+                  disabled={isOptimizing}
+                  variant="outline"
+                >
+                  {isOptimizing && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  {isOptimizing ? 'Otimizando...' : 'Otimizar Filas'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>
+                  Reorganizar todas as filas para preencher buracos e otimizar
+                  recursos
+                </p>
+              </TooltipContent>
+            </Tooltip>
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
               <SheetTrigger asChild>
                 <Button variant="outline">
@@ -1735,38 +1902,35 @@ export default function DashboardPage() {
             </Sheet>
           </div>
         </div>
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-y-auto lg:grid-cols-2 lg:items-start">
-          <QueueColumn
-            title="Manicure & Pedicure"
-            clients={manicureQueue}
-            onCallNext={() => handleCallNext('manicure_pedicure')}
-            onOptimize={handleOptimizeQueue}
-            onFinish={handleFinishService}
-            onRemove={handleRemoveFromQueue}
-            onNoShow={handleNoShow}
-            capacityChips={renderCapacityChips('manicure_pedicure')}
-            disableCallNext={isCallNextDisabled('manicure_pedicure')}
-            disableReason="Todos os atendentes desse pool estão ocupados no momento."
-            isLoadingNext={isCallingNext === 'manicure_pedicure'}
-            isOptimizing={isOptimizing}
-            queueType="manicure_pedicure"
-          />
-          <QueueColumn
-            title="Escova"
-            clients={escovaQueue}
-            onCallNext={() => handleCallNext('escova')}
-            onOptimize={handleOptimizeQueue}
-            onFinish={handleFinishService}
-            onRemove={handleRemoveFromQueue}
-            onNoShow={handleNoShow}
-            capacityChips={renderCapacityChips('escova')}
-            disableCallNext={isCallNextDisabled('escova')}
-            disableReason="Todos os atendentes desse pool estão ocupados no momento."
-            isLoadingNext={isCallingNext === 'escova'}
-            isOptimizing={isOptimizing}
-            queueType="escova"
-          />
-        </div>
+        {dashboardPools.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border bg-card/30 p-8 text-center text-sm text-muted-foreground">
+            Nenhum serviço cadastrado no catálogo deste salão.
+          </div>
+        ) : (
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-y-auto min-[920px]:grid-cols-2">
+            {sortedDashboardPools.map((pool) => {
+              const poolClients = queueData.filter((client) =>
+                belongsToPool(client, pool)
+              );
+              return (
+                <QueueColumn
+                  key={pool.id}
+                  title={pool.title}
+                  clients={poolClients}
+                  onCallNext={() => handleCallNext(pool)}
+                  onFinish={handleFinishService}
+                  onRemove={requestCancelConfirmation}
+                  onNoShow={requestNoShowConfirmation}
+                  capacityChips={renderCapacityChips(pool)}
+                  disableCallNext={isCallNextDisabled(pool)}
+                  disableReason="Todos os atendentes desse pool estão ocupados no momento."
+                  isLoadingNext={isCallingNext === pool.id}
+                  poolServiceNames={pool.serviceNames}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </TooltipProvider>
   );

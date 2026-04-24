@@ -31,7 +31,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 
 type ClientData = { name: string; phone: string; email: string };
-type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
+type ServiceData = { [serviceName: string]: boolean };
 type WaitData = {
   estimatedTime: number;
   position: number;
@@ -70,11 +70,19 @@ export function ClientSignUpFlow({
   const router = useRouter();
 
   const mapServicesToBackend = (services: ServiceData): string[] => {
-    const mapped: string[] = [];
-    if (services.manicure) mapped.push('manicure');
-    if (services.pedicure) mapped.push('pedicure');
-    if (services.escova) mapped.push('brush');
-    return mapped;
+    return Array.from(
+      new Set(
+        Object.entries(services)
+          .filter(([, selected]) => Boolean(selected))
+          .map(([serviceName]) => {
+            const normalized = String(serviceName || '')
+              .trim()
+              .toLowerCase();
+            return normalized === 'escova' ? 'brush' : normalized;
+          })
+          .filter(Boolean)
+      )
+    );
   };
 
   const handleIdentificationSuccess = (data: ClientData) => {

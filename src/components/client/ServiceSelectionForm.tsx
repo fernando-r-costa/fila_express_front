@@ -22,9 +22,16 @@ type ClientData = {
 };
 
 type ServiceData = {
-  manicure: boolean;
-  pedicure: boolean;
-  escova: boolean;
+  [serviceName: string]: boolean;
+};
+
+type CatalogService = {
+  serviceId: number;
+  salonId: number;
+  name: string;
+  category?: string | null;
+  durationMinutes?: number;
+  available?: boolean;
 };
 
 interface ServiceSelectionFormProps {
@@ -38,17 +45,32 @@ export function ServiceSelectionForm({
   salonId,
   onSuccess,
 }: ServiceSelectionFormProps) {
-  const [selectedServices, setSelectedServices] = useState<ServiceData>({
-    manicure: false,
-    pedicure: false,
-    escova: false,
-  });
+  const [selectedServices, setSelectedServices] = useState<ServiceData>({});
+  const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [serviceAvailability, setServiceAvailability] = useState({
-    manicure: true,
-    pedicure: true,
-    escova: true,
-  });
+  const [isCatalogLoading, setIsCatalogLoading] = useState(false);
+
+  const normalizeServiceName = (value: string) => {
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase();
+    if (normalized === 'escova') return 'brush';
+    return normalized;
+  };
+
+  const formatServiceLabel = (serviceName: string) => {
+    const normalized = normalizeServiceName(serviceName);
+    if (normalized === 'manicure') return 'Manicure';
+    if (normalized === 'pedicure') return 'Pedicure';
+    if (normalized === 'brush') return 'Escova';
+    if (normalized === 'maquiagem') return 'Maquiagem';
+
+    return normalized
+      .split(/[_\s-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -56,34 +78,34 @@ export function ServiceSelectionForm({
     const loadAvailability = async () => {
       if (!salonId) return;
 
-      try {
-        const { data } = await api.get(`/salon/${salonId}`);
+      setIsCatalogLoading(true);
 
-        const nailsCount = Number(
-          data?.manicurePedicureAttendants ??
-            data?.numberOfManicurePedicureStations ??
-            0
-        );
-        const brushCount = Number(
-          data?.brushAttendants ?? data?.numberOfBrushStations ?? 0
-        );
-        const nextAvailability = {
-          manicure: nailsCount > 0,
-          pedicure: nailsCount > 0,
-          escova: brushCount > 0,
-        };
+      try {
+        const { data } = await api.get(`/salon/${salonId}/services`);
+        const services = Array.isArray(data) ? data : [];
 
         if (!isMounted) return;
 
-        setServiceAvailability(nextAvailability);
+        setCatalogServices(services);
 
-        setSelectedServices((prev) => ({
-          manicure: nextAvailability.manicure ? prev.manicure : false,
-          pedicure: nextAvailability.pedicure ? prev.pedicure : false,
-          escova: nextAvailability.escova ? prev.escova : false,
-        }));
+        setSelectedServices((prev) => {
+          const next: ServiceData = {};
+          for (const service of services) {
+            const key = normalizeServiceName(service.name);
+            const isAvailable = Boolean(service.available);
+            next[key] = isAvailable ? Boolean(prev[key]) : false;
+          }
+          return next;
+        });
       } catch {
-        // Em erro de leitura, mantém habilitado para não bloquear indevidamente.
+        // Em erro de leitura, mantém sem opções para não enviar seleção inconsistente.
+        if (!isMounted) return;
+        setCatalogServices([]);
+        setSelectedServices({});
+      } finally {
+        if (isMounted) {
+          setIsCatalogLoading(false);
+        }
       }
     };
 
@@ -94,14 +116,16 @@ export function ServiceSelectionForm({
     };
   }, [salonId]);
 
-  const handleCheckboxChange = (service: keyof typeof selectedServices) => {
-    if (!serviceAvailability[service]) {
+  const handleCheckboxChange = (serviceName: string, isAvailable: boolean) => {
+    if (!isAvailable) {
       return;
     }
 
+    const key = normalizeServiceName(serviceName);
+
     setSelectedServices((prev) => ({
       ...prev,
-      [service]: !prev[service],
+      [key]: !prev[key],
     }));
   };
 
@@ -124,6 +148,18 @@ export function ServiceSelectionForm({
     (service) => service === true
   );
 
+  const orderedCatalogServices = [...catalogServices].sort((a, b) => {
+    const categoryA = String(a.category || '').toLowerCase();
+    const categoryB = String(b.category || '').toLowerCase();
+    if (categoryA !== categoryB) {
+      return categoryA.localeCompare(categoryB, 'pt-BR');
+    }
+    return formatServiceLabel(a.name).localeCompare(
+      formatServiceLabel(b.name),
+      'pt-BR'
+    );
+  });
+
   return (
     <form onSubmit={handleSubmit}>
       <Card className="w-full max-w-sm">
@@ -136,60 +172,47 @@ export function ServiceSelectionForm({
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div
-            className={`flex items-center space-x-2 ${
-              !serviceAvailability.manicure ? 'opacity-50' : ''
-            }`}
-          >
-            <Checkbox
-              id="manicure"
-              checked={selectedServices.manicure}
-              onCheckedChange={() => handleCheckboxChange('manicure')}
-              disabled={!serviceAvailability.manicure || isLoading}
-            />
-            <Label htmlFor="manicure">Manicure</Label>
-            {!serviceAvailability.manicure && (
-              <span className="text-xs text-muted-foreground">
-                indisponível
-              </span>
-            )}
-          </div>
-          <div
-            className={`flex items-center space-x-2 ${
-              !serviceAvailability.pedicure ? 'opacity-50' : ''
-            }`}
-          >
-            <Checkbox
-              id="pedicure"
-              checked={selectedServices.pedicure}
-              onCheckedChange={() => handleCheckboxChange('pedicure')}
-              disabled={!serviceAvailability.pedicure || isLoading}
-            />
-            <Label htmlFor="pedicure">Pedicure</Label>
-            {!serviceAvailability.pedicure && (
-              <span className="text-xs text-muted-foreground">
-                indisponível
-              </span>
-            )}
-          </div>
-          <div
-            className={`flex items-center space-x-2 ${
-              !serviceAvailability.escova ? 'opacity-50' : ''
-            }`}
-          >
-            <Checkbox
-              id="escova"
-              checked={selectedServices.escova}
-              onCheckedChange={() => handleCheckboxChange('escova')}
-              disabled={!serviceAvailability.escova || isLoading}
-            />
-            <Label htmlFor="escova">Escova</Label>
-            {!serviceAvailability.escova && (
-              <span className="text-xs text-muted-foreground">
-                indisponível
-              </span>
-            )}
-          </div>
+          {isCatalogLoading ? (
+            <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Carregando serviços...
+            </div>
+          ) : orderedCatalogServices.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              Nenhum serviço disponível no catálogo.
+            </div>
+          ) : (
+            orderedCatalogServices.map((service) => {
+              const key = normalizeServiceName(service.name);
+              const isAvailable = Boolean(service.available);
+
+              return (
+                <div
+                  key={service.serviceId}
+                  className={`flex items-center space-x-2 ${
+                    !isAvailable ? 'opacity-50' : ''
+                  }`}
+                >
+                  <Checkbox
+                    id={`service-${service.serviceId}`}
+                    checked={Boolean(selectedServices[key])}
+                    onCheckedChange={() =>
+                      handleCheckboxChange(service.name, isAvailable)
+                    }
+                    disabled={!isAvailable || isLoading}
+                  />
+                  <Label htmlFor={`service-${service.serviceId}`}>
+                    {formatServiceLabel(service.name)}
+                  </Label>
+                  {!isAvailable && (
+                    <span className="text-xs text-muted-foreground">
+                      indisponível
+                    </span>
+                  )}
+                </div>
+              );
+            })
+          )}
         </CardContent>
         <CardFooter>
           <Button
