@@ -1,6 +1,11 @@
 'use client';
 
-import { ClientSignUpFlow } from '@/components/client/ClientSignUpFlow';
+import {
+  ClientSignUpFlow,
+  ClientData,
+  ServiceData,
+  WaitData,
+} from '@/components/client/ClientSignUpFlow';
 import { useMemo, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -13,14 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-
-type ClientData = { name: string; phone: string; email: string };
-type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
-type WaitData = {
-  estimatedTime: number;
-  position: number;
-  appointmentId?: number;
-};
 
 export default function HomePage() {
   const { toast } = useToast();

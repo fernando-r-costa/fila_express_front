@@ -30,9 +30,9 @@ import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 
-type ClientData = { name: string; phone: string; email: string };
-type ServiceData = { [serviceName: string]: boolean };
-type WaitData = {
+export type ClientData = { name: string; phone: string; email: string };
+export type ServiceData = { [serviceName: string]: boolean };
+export type WaitData = {
   estimatedTime: number;
   position: number;
   startTime?: string;
