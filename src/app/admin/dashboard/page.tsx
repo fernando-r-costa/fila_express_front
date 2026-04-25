@@ -1330,7 +1330,7 @@ export default function DashboardPage() {
         services: callNextServices,
         attendantAssignments,
       });
-      await fetchQueueData();
+      await fetchQueueData({ silent: true });
       const clientName = response.data?.client?.clientName || 'Cliente';
       toast({
         title: 'Cliente Chamado',
@@ -1381,7 +1381,7 @@ export default function DashboardPage() {
         throw error; // Repassa o erro para o catch externo
       }
 
-      await fetchQueueData();
+      await fetchQueueData({ silent: true });
     } catch (error) {
       console.error(error);
       toast({
@@ -1424,7 +1424,7 @@ export default function DashboardPage() {
       } else {
         await api.patch(`/appointments/${clientId}/finish`);
       }
-      await fetchQueueData();
+      await fetchQueueData({ silent: true });
       toast({
         title: 'Atendimento Finalizado!',
         description: `${clientName} foi liberada.`,
@@ -1467,10 +1467,12 @@ export default function DashboardPage() {
       // Aguarda um pouco para deixar a otimização rodar, depois faz refresh
       if (data?.isOptimizing) {
         setTimeout(() => {
-          fetchQueueData().finally(() => setIsOptimizing(false));
+          fetchQueueData({ silent: true }).finally(() =>
+            setIsOptimizing(false)
+          );
         }, 2000);
       } else {
-        await fetchQueueData();
+        await fetchQueueData({ silent: true });
         setIsOptimizing(false);
       }
     } catch (error) {
@@ -1504,10 +1506,12 @@ export default function DashboardPage() {
       // Aguarda um pouco para deixar a otimização rodar, depois faz refresh
       if (data?.isOptimizing) {
         setTimeout(() => {
-          fetchQueueData().finally(() => setIsOptimizing(false));
+          fetchQueueData({ silent: true }).finally(() =>
+            setIsOptimizing(false)
+          );
         }, 2000);
       } else {
-        await fetchQueueData();
+        await fetchQueueData({ silent: true });
         setIsOptimizing(false);
       }
     } catch (error) {
