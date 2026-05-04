@@ -46,68 +46,143 @@ export default function HomePage() {
         const { data: salonConfig } = await api.get(`/salon/${salonId}`);
 
         const now = new Date();
-        const [openHour, openMinute] = salonConfig.openingTime
-          .split(':')
-          .map(Number);
-        const [closeHour, closeMinute] = salonConfig.closingTime
-          .split(':')
-          .map(Number);
+        const dayOfWeek = now.getDay(); // 0=domingo, 6=sábado
 
-        const openingDateTime = new Date();
-        openingDateTime.setHours(openHour, openMinute, 0, 0);
+        // Buscar configuração do dia atual no weeklySchedule
+        const todayConfig = Array.isArray(salonConfig.weeklySchedule)
+          ? salonConfig.weeklySchedule.find(
+              (day: any) => Number(day.dayOfWeek) === dayOfWeek
+            )
+          : null;
 
-        const closingDateTime = new Date();
-        closingDateTime.setHours(closeHour, closeMinute, 0, 0);
+        // Se não houver config semanal, usar os horários globais
+        const openingTimeStr =
+          todayConfig?.openingTime || salonConfig.openingTime;
+        const closingTimeStr =
+          todayConfig?.closingTime || salonConfig.closingTime;
+        const isClosed = todayConfig?.closed ?? false;
 
-        const queueOpeningTime = new Date(
-          openingDateTime.getTime() -
-            salonConfig.queuePreOpeningHours * 60 * 60 * 1000
-        );
-
-        if (now < queueOpeningTime) {
-          setIsQueueOpen(false);
-          setClosedReason('before-open');
-          const openTime = queueOpeningTime.toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-          const openDate = queueOpeningTime.toLocaleDateString('pt-BR', {
-            day: '2-digit',
-            month: '2-digit',
-          });
-          setQueueOpenTime(openTime);
-          setQueueOpenDate(openDate);
-        } else if (now >= closingDateTime) {
+        // Verificar se o dia está fechado
+        if (isClosed) {
           setIsQueueOpen(false);
           setClosedReason('after-close');
-          // Calcular o próximo dia de abertura (amanhã)
-          const tomorrow = new Date(now);
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          tomorrow.setHours(openHour, openMinute, 0, 0);
 
-          const tomorrowQueueOpeningTime = new Date(
-            tomorrow.getTime() -
+          // Encontrar próximo dia aberto
+          let nextOpenDay = new Date(now);
+          for (let i = 1; i <= 7; i++) {
+            nextOpenDay.setDate(now.getDate() + i);
+            const nextDayOfWeek = nextOpenDay.getDay();
+            const nextDayConfig = Array.isArray(salonConfig.weeklySchedule)
+              ? salonConfig.weeklySchedule.find(
+                  (day: any) => Number(day.dayOfWeek) === nextDayOfWeek
+                )
+              : null;
+
+            if (!nextDayConfig?.closed) {
+              const nextOpeningStr =
+                nextDayConfig?.openingTime || salonConfig.openingTime;
+              const [nextHour, nextMinute] = nextOpeningStr
+                .split(':')
+                .map(Number);
+              nextOpenDay.setHours(nextHour, nextMinute, 0, 0);
+
+              const nextQueueTime = new Date(
+                nextOpenDay.getTime() -
+                  salonConfig.queuePreOpeningHours * 60 * 60 * 1000
+              );
+
+              setQueueOpenTime(
+                nextQueueTime.toLocaleTimeString('pt-BR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              );
+              setQueueOpenDate(
+                nextQueueTime.toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                })
+              );
+              break;
+            }
+          }
+        } else {
+          // Dia aberto, verificar horários
+          const [openHour, openMinute] = openingTimeStr.split(':').map(Number);
+          const [closeHour, closeMinute] = closingTimeStr
+            .split(':')
+            .map(Number);
+
+          const openingDateTime = new Date();
+          openingDateTime.setHours(openHour, openMinute, 0, 0);
+
+          const closingDateTime = new Date();
+          closingDateTime.setHours(closeHour, closeMinute, 0, 0);
+
+          const queueOpeningTime = new Date(
+            openingDateTime.getTime() -
               salonConfig.queuePreOpeningHours * 60 * 60 * 1000
           );
 
-          const openTime = tomorrowQueueOpeningTime.toLocaleTimeString(
-            'pt-BR',
-            {
+          if (now < queueOpeningTime) {
+            setIsQueueOpen(false);
+            setClosedReason('before-open');
+            const openTime = queueOpeningTime.toLocaleTimeString('pt-BR', {
               hour: '2-digit',
               minute: '2-digit',
-            }
-          );
-          const openDate = tomorrowQueueOpeningTime.toLocaleDateString(
-            'pt-BR',
-            {
+            });
+            const openDate = queueOpeningTime.toLocaleDateString('pt-BR', {
               day: '2-digit',
               month: '2-digit',
+            });
+            setQueueOpenTime(openTime);
+            setQueueOpenDate(openDate);
+          } else if (now >= closingDateTime) {
+            setIsQueueOpen(false);
+            setClosedReason('after-close');
+
+            // Encontrar próximo dia aberto
+            let nextOpenDay = new Date(now);
+            for (let i = 1; i <= 7; i++) {
+              nextOpenDay.setDate(now.getDate() + i);
+              const nextDayOfWeek = nextOpenDay.getDay();
+              const nextDayConfig = Array.isArray(salonConfig.weeklySchedule)
+                ? salonConfig.weeklySchedule.find(
+                    (day: any) => Number(day.dayOfWeek) === nextDayOfWeek
+                  )
+                : null;
+
+              if (!nextDayConfig?.closed) {
+                const nextOpeningStr =
+                  nextDayConfig?.openingTime || salonConfig.openingTime;
+                const [nextHour, nextMinute] = nextOpeningStr
+                  .split(':')
+                  .map(Number);
+                nextOpenDay.setHours(nextHour, nextMinute, 0, 0);
+
+                const nextQueueTime = new Date(
+                  nextOpenDay.getTime() -
+                    salonConfig.queuePreOpeningHours * 60 * 60 * 1000
+                );
+
+                setQueueOpenTime(
+                  nextQueueTime.toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                );
+                setQueueOpenDate(
+                  nextQueueTime.toLocaleDateString('pt-BR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                  })
+                );
+                break;
+              }
             }
-          );
-          setQueueOpenTime(openTime);
-          setQueueOpenDate(openDate);
-        } else {
-          setIsQueueOpen(true);
+          } else {
+            setIsQueueOpen(true);
+          }
         }
       } catch (error) {
         console.error('Erro ao verificar status da fila:', error);

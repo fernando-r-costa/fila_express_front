@@ -34,6 +34,29 @@ type CatalogService = {
   durationMinutes: number;
 };
 
+type OpeningHoursRow = {
+  dayOfWeek: number;
+  open: boolean;
+  openingTime: string;
+  closingTime: string;
+};
+
+const WEEK_DAYS: Array<{ dayOfWeek: number; label: string }> = [
+  { dayOfWeek: 0, label: 'Domingo' },
+  { dayOfWeek: 1, label: 'Segunda-feira' },
+  { dayOfWeek: 2, label: 'Terça-feira' },
+  { dayOfWeek: 3, label: 'Quarta-feira' },
+  { dayOfWeek: 4, label: 'Quinta-feira' },
+  { dayOfWeek: 5, label: 'Sexta-feira' },
+  { dayOfWeek: 6, label: 'Sábado' },
+];
+
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+  const hour = String(Math.floor(index / 2)).padStart(2, '0');
+  const minute = index % 2 === 0 ? '00' : '30';
+  return `${hour}:${minute}`;
+});
+
 const KNOWN_SERVICE_LABELS: Record<string, string> = {
   manicure: 'Manicure',
   pedicure: 'Pedicure',
@@ -84,6 +107,12 @@ const formatRoleLabel = (role: string) => {
   return KNOWN_SERVICE_LABELS[key] || toTitleCaseLabel(key);
 };
 
+const normalizeTimeValue = (value: string) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '09:00';
+  return normalized.slice(0, 5);
+};
+
 interface SettingsSheetProps {
   onSave: (settings: any) => void;
   salonId?: number | string;
@@ -93,6 +122,7 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [isAttendantModalOpen, setIsAttendantModalOpen] = useState(false);
+  const [isOpeningHoursModalOpen, setIsOpeningHoursModalOpen] = useState(false);
   const [isAttendantsLoading, setIsAttendantsLoading] = useState(false);
   const [isAttendantSaving, setIsAttendantSaving] = useState(false);
   const [attendants, setAttendants] = useState<Attendant[]>([]);
@@ -122,6 +152,16 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     useState(false);
   const [openingTime, setOpeningTime] = useState('09:00');
   const [closingTime, setClosingTime] = useState('18:00');
+  const [weeklyOpeningHours, setWeeklyOpeningHours] = useState<
+    OpeningHoursRow[]
+  >(
+    WEEK_DAYS.map((day) => ({
+      dayOfWeek: day.dayOfWeek,
+      open: true,
+      openingTime: '09:00',
+      closingTime: '18:00',
+    }))
+  );
   const [mpStrategy, setMpStrategy] = useState<'optimized' | 'always_two'>(
     'optimized'
   );
@@ -253,8 +293,14 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
   });
 
   const validate = () => {
-    if (timeToMinutes(openingTime) >= timeToMinutes(closingTime)) {
-      return 'Horário de abertura deve ser anterior ao de fechamento.';
+    for (const row of weeklyOpeningHours) {
+      if (!row.open) continue;
+      if (timeToMinutes(row.openingTime) >= timeToMinutes(row.closingTime)) {
+        const dayLabel =
+          WEEK_DAYS.find((day) => day.dayOfWeek === row.dayOfWeek)?.label ||
+          'Dia';
+        return `No dia ${dayLabel}, o horário de abertura deve ser anterior ao fechamento.`;
+      }
     }
     if (queuePreOpeningHours < 0) {
       return 'Horas de pré-abertura não podem ser negativas.';
@@ -303,6 +349,24 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
           setOpeningTime(data.openingTime);
         if (typeof data.closingTime === 'string')
           setClosingTime(data.closingTime);
+
+        const initialOpeningTime =
+          typeof data.openingTime === 'string' && data.openingTime
+            ? data.openingTime
+            : '09:00';
+        const initialClosingTime =
+          typeof data.closingTime === 'string' && data.closingTime
+            ? data.closingTime
+            : '18:00';
+
+        setWeeklyOpeningHours(
+          WEEK_DAYS.map((day) => ({
+            dayOfWeek: day.dayOfWeek,
+            open: true,
+            openingTime: initialOpeningTime,
+            closingTime: initialClosingTime,
+          }))
+        );
         if (
           data.mpOptimizationStrategy === 'always_two' ||
           data.mpOptimizationStrategy === 'optimized'
@@ -344,6 +408,26 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
         if (typeof data.aiName === 'string' && data.aiName) {
           setAiName(data.aiName);
         }
+
+        if (
+          Array.isArray(data.weeklySchedule) &&
+          data.weeklySchedule.length > 0
+        ) {
+          setWeeklyOpeningHours(
+            WEEK_DAYS.map((day) => {
+              const match = data.weeklySchedule.find(
+                (row: any) => Number(row.dayOfWeek) === day.dayOfWeek
+              );
+
+              return {
+                dayOfWeek: day.dayOfWeek,
+                open: !Boolean(match?.closed),
+                openingTime: normalizeTimeValue(match?.openingTime || '09:00'),
+                closingTime: normalizeTimeValue(match?.closingTime || '18:00'),
+              };
+            })
+          );
+        }
       } catch (err) {
         // Silencioso; o dashboard exibirá toasts se necessário
         // Poderíamos adicionar um pequeno aviso local aqui se quisermos
@@ -379,11 +463,18 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
     const err = validate();
     setFormError(err);
     if (err) return;
+    const firstOpenDay =
+      weeklyOpeningHours.find((row) => row.open) ||
+      ({
+        openingTime: openingTime || '09:00',
+        closingTime: closingTime || '18:00',
+      } as OpeningHoursRow);
+
     try {
       setIsLoading(true);
       const newSettings = {
-        openingTime,
-        closingTime,
+        openingTime: firstOpenDay.openingTime,
+        closingTime: firstOpenDay.closingTime,
         manicurePedicureAttendants: manicureAttendants,
         brushAttendants: escovaAttendants,
         useActiveAttendantsCapacity,
@@ -399,6 +490,12 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
         lunchEndTime: lunchEndTime || null,
         lunchDurationMinutes: lunchDurationMinutes || null,
         aiName: aiName.trim() || 'Inteligência Artificial',
+        weeklySchedule: weeklyOpeningHours.map((row) => ({
+          dayOfWeek: row.dayOfWeek,
+          closed: !row.open,
+          openingTime: row.open ? row.openingTime : null,
+          closingTime: row.open ? row.closingTime : null,
+        })),
       };
 
       await onSave(newSettings);
@@ -417,6 +514,27 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
       setIsLoading(false);
     }
   };
+
+  const updateOpeningHoursRow = (
+    dayOfWeek: number,
+    patch: Partial<OpeningHoursRow>
+  ) => {
+    setWeeklyOpeningHours((current) =>
+      current.map((row) =>
+        row.dayOfWeek === dayOfWeek ? { ...row, ...patch } : row
+      )
+    );
+  };
+
+  const openingHoursSummary = useMemo(() => {
+    const openDays = weeklyOpeningHours.filter((row) => row.open).length;
+    if (openDays === 0) return 'Nenhum dia aberto';
+    if (openDays === 7) {
+      const sample = weeklyOpeningHours[0];
+      return `Todos os dias: ${sample.openingTime} - ${sample.closingTime}`;
+    }
+    return `${openDays} dia(s) aberto(s)`;
+  }, [weeklyOpeningHours]);
 
   const handleSaveAttendant = async () => {
     if (!salonId) return;
@@ -579,23 +697,22 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
             <h3 className="text-lg font-medium">Horário de Funcionamento</h3>
             <Separator className="my-4" />
             <div className="space-y-4">
-              <div className="grid grid-cols-2 items-center gap-4">
-                <Label htmlFor="opening-time">Abertura</Label>
-                <Input
-                  id="opening-time"
-                  type="time"
-                  value={openingTime}
-                  onChange={(e) => setOpeningTime(e.target.value)}
-                />
-              </div>
-              <div className="grid grid-cols-2 items-center gap-4">
-                <Label htmlFor="closing-time">Fechamento</Label>
-                <Input
-                  id="closing-time"
-                  type="time"
-                  value={closingTime}
-                  onChange={(e) => setClosingTime(e.target.value)}
-                />
+              <div className="rounded-md border p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-medium">Agenda semanal</div>
+                    <div className="text-xs text-muted-foreground">
+                      {openingHoursSummary}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsOpeningHoursModalOpen(true)}
+                  >
+                    Configurar Horários
+                  </Button>
+                </div>
               </div>
               <div className="grid grid-cols-2 items-center gap-4">
                 <Label htmlFor="preopen-hours">
@@ -810,6 +927,126 @@ export function SettingsSheet({ onSave, salonId }: SettingsSheetProps) {
           </div>
         </div>
       </div>
+
+      <AlertDialog
+        open={isOpeningHoursModalOpen}
+        onOpenChange={(open) => setIsOpeningHoursModalOpen(open)}
+      >
+        <AlertDialogContent className="max-h-[90vh] max-w-4xl overflow-hidden p-0">
+          <div className="flex h-full max-h-[90vh] flex-col">
+            <AlertDialogHeader className="shrink-0 border-b px-6 py-5 text-left">
+              <AlertDialogTitle>
+                Horário semanal de funcionamento
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Defina, por dia da semana, se o salão está aberto e o intervalo
+                de funcionamento.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="overflow-auto px-6 py-5">
+              <table className="w-full min-w-[720px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="px-2 py-2 font-medium">Dia da semana</th>
+                    <th className="px-2 py-2 font-medium">Aberto/Fechado</th>
+                    <th className="px-2 py-2 font-medium">Abertura</th>
+                    <th className="px-2 py-2 font-medium">Fechamento</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {WEEK_DAYS.map((day) => {
+                    const row =
+                      weeklyOpeningHours.find(
+                        (item) => item.dayOfWeek === day.dayOfWeek
+                      ) ||
+                      ({
+                        dayOfWeek: day.dayOfWeek,
+                        open: true,
+                        openingTime: '09:00',
+                        closingTime: '18:00',
+                      } as OpeningHoursRow);
+
+                    return (
+                      <tr
+                        key={day.dayOfWeek}
+                        className="border-b last:border-b-0"
+                      >
+                        <td className="px-2 py-3 font-medium">{day.label}</td>
+                        <td className="px-2 py-3">
+                          <label className="inline-flex items-center gap-2">
+                            <Checkbox
+                              checked={row.open}
+                              onCheckedChange={(checked) =>
+                                updateOpeningHoursRow(day.dayOfWeek, {
+                                  open: Boolean(checked),
+                                })
+                              }
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {row.open ? 'Aberto' : 'Fechado'}
+                            </span>
+                          </label>
+                        </td>
+                        <td className="px-2 py-3">
+                          <select
+                            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                            value={row.openingTime}
+                            disabled={!row.open}
+                            onChange={(e) =>
+                              updateOpeningHoursRow(day.dayOfWeek, {
+                                openingTime: e.target.value,
+                              })
+                            }
+                          >
+                            {TIME_OPTIONS.map((time) => (
+                              <option
+                                key={`open-${day.dayOfWeek}-${time}`}
+                                value={time}
+                              >
+                                {time}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-3">
+                          <select
+                            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                            value={row.closingTime}
+                            disabled={!row.open}
+                            onChange={(e) =>
+                              updateOpeningHoursRow(day.dayOfWeek, {
+                                closingTime: e.target.value,
+                              })
+                            }
+                          >
+                            {TIME_OPTIONS.map((time) => (
+                              <option
+                                key={`close-${day.dayOfWeek}-${time}`}
+                                value={time}
+                              >
+                                {time}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <AlertDialogFooter className="shrink-0 border-t px-6 py-4">
+              <AlertDialogCancel
+                onClick={() => setIsOpeningHoursModalOpen(false)}
+              >
+                Fechar
+              </AlertDialogCancel>
+            </AlertDialogFooter>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={isAttendantModalOpen}
