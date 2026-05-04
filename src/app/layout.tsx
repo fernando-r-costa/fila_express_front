@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
-// @ts-expect-error CSS global import handled by Next.js
 import './globals.css';
 import { Suspense } from 'react';
 import { Toaster } from '@/components/ui/toaster';

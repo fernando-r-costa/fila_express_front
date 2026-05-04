@@ -2,6 +2,7 @@ export default function HomePage() {
   return (
     <main className="flex h-dvh items-center justify-center overflow-hidden bg-texture bg-cover bg-center bg-no-repeat px-6">
       <div className="flex flex-col items-center justify-center rounded-2xl bg-black/70 px-8 py-10 text-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/wallpapers/logo_fundo_preto.png"
           alt="Logo do Salão"
