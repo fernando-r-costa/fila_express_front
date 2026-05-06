@@ -11,6 +11,7 @@ type ScannerProps = {
   salonId?: number | null;
   clientPhone?: string;
   onSuccess: () => void;
+  onCancel?: () => void;
   onClose?: () => void;
 };
 
@@ -38,6 +39,7 @@ export function SalonCheckinScanner({
   salonId,
   clientPhone,
   onSuccess,
+  onCancel,
   onClose,
 }: ScannerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -274,6 +276,21 @@ export function SalonCheckinScanner({
             >
               <X className="mr-2 h-4 w-4" />
               Parar leitura
+            </Button>
+          )}
+
+          {onCancel && (
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                stopScanner();
+                setIsRunning(false);
+                setMessage('Leitura interrompida.');
+                onCancel();
+              }}
+            >
+              Cancelar atendimento
             </Button>
           )}
 

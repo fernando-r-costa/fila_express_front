@@ -479,6 +479,7 @@ export default function QueuePage() {
               appointmentId={appointmentId}
               salonId={data.salonId}
               clientPhone={data.clientPhone}
+              onCancel={handleCancel}
               onSuccess={async () => {
                 await fetchData(true);
               }}

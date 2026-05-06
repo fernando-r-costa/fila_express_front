@@ -257,6 +257,25 @@ export function ClientSignUpFlow({
         ) {
           errorMessage =
             'Estamos processando sua entrada na fila. Aguarde alguns segundos e tente confirmar novamente. Caso já tenha sido criado, o salão verá seu nome no painel.';
+        } else if ((error as any).response?.status === 409) {
+          const pendingId = (error as any).response?.data?.appointmentId;
+          errorMessage =
+            (error as any).response?.data?.error ||
+            'Você já possui um atendimento em andamento. Abrindo o rastreamento.';
+
+          if (pendingId) {
+            toast({
+              title: 'Atendimento pendente encontrado',
+              description: 'Você já possui um atendimento em andamento.',
+              duration: 10000,
+            });
+            router.push(`/fila/${pendingId}`);
+            return;
+          }
+        } else if ((error as any).response?.status === 403) {
+          errorMessage =
+            (error as any).response?.data?.error ||
+            'Seu cadastro está temporariamente bloqueado por no-show. Entre em contato com o salão.';
         }
 
         toast({
