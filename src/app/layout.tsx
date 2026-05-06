@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
 import { Suspense } from 'react';
+import Header from '@/components/shared/Header';
 import { Toaster } from '@/components/ui/toaster';
 
 const sqindra = localFont({
@@ -51,6 +52,7 @@ export default function RootLayout({
   return (
     <html lang="pt-br" className={`${sqindra.variable} scroll-smooth`}>
       <body className="flex min-h-0 flex-1 flex-col bg-foreground bg-texture bg-cover bg-center bg-no-repeat">
+        <Header />
         <Suspense
           fallback={
             <div className="flex flex-grow animate-pulse items-center justify-center">

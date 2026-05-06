@@ -17,10 +17,11 @@
 
 'use client';
 
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { QueueTrackingView } from '@/components/client/QueueTrackingView';
 import { TimeConfirmationView } from '@/components/client/TimeConfirmationView';
+import { SalonCheckinScanner } from '@/components/client/SalonCheckinScanner';
 import {
   Card,
   CardContent,
@@ -32,13 +33,19 @@ import { CheckCircle, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
+const CONFIRMATION_NOTICE_MINUTES = 30;
+const AUTO_CANCEL_THRESHOLD_MINUTES = 20;
+
 type TrackingData = {
   initialTime: number;
   initialPosition: number | null;
   serviceData: { manicure: boolean; pedicure: boolean; escova: boolean };
   clientPhone: string;
+  salonId?: number | null;
   notified: boolean;
+  status?: string;
   confirmedEta?: string;
+  checkinDeadlineLabel?: string;
 };
 
 export default function QueuePage() {
@@ -62,11 +69,6 @@ export default function QueuePage() {
     dataRef.current = data;
   }, [data]);
 
-  const salonId = useMemo(() => {
-    const envVar = process.env.NEXT_PUBLIC_SALON_ID;
-    return envVar ? Number(envVar) : undefined;
-  }, []);
-
   // --- LÓGICA DE MAPEAMENTO HÍBRIDA (NOVO + LEGADO) ---
   const mapServicesFromBackend = (appointmentData: any) => {
     const servicesMap = { manicure: false, pedicure: false, escova: false };
@@ -74,7 +76,11 @@ export default function QueuePage() {
 
     // Cenário 1: Backend Novo (Relacional) -> services: [{ serviceName: 'brush' }, ...]
     if (Array.isArray(appointmentData.services)) {
-      serviceNames = appointmentData.services.map((s: any) => s.serviceName);
+      serviceNames = appointmentData.services
+        .filter(
+          (s: any) => s.status !== 'not_requested' && s.status !== 'cancelled'
+        )
+        .map((s: any) => s.serviceName);
     }
     // Cenário 2: Backend Legado ou Simplificado -> servicesRequested: ['brush', ...]
     else if (Array.isArray(appointmentData.servicesRequested)) {
@@ -141,6 +147,16 @@ export default function QueuePage() {
           const { data: trackingData } = await api.get(
             `/appointments/${appointmentId}/track`
           );
+          const checkinDeadlineLabel = trackingData?.checkinDeadlineAt
+            ? new Date(trackingData.checkinDeadlineAt).toLocaleTimeString(
+                'pt-BR',
+                {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  timeZone: 'America/Sao_Paulo',
+                }
+              )
+            : undefined;
           const firstService = getFirstRequestedService(trackingData);
           if (firstService) {
             const etaDate = new Date(firstService.estimatedStart);
@@ -149,9 +165,18 @@ export default function QueuePage() {
               minute: '2-digit',
             });
             setData((prev) =>
-              prev ? ({ ...prev, confirmedEta: formattedEta } as any) : null
+              prev
+                ? ({
+                    ...prev,
+                    confirmedEta: formattedEta,
+                    checkinDeadlineLabel,
+                  } as any)
+                : null
             );
           } else {
+            setData((prev) =>
+              prev ? ({ ...prev, checkinDeadlineLabel } as any) : null
+            );
             setFinalTime(currentTime);
           }
         } catch (e) {
@@ -182,53 +207,109 @@ export default function QueuePage() {
     [appointmentId, toast]
   );
 
-  const fetchData = useCallback(async () => {
-    if (Number.isNaN(appointmentId)) return;
-    if (isConfirmedRef.current) return;
+  const fetchData = useCallback(
+    async (forceRefresh = false) => {
+      if (Number.isNaN(appointmentId)) return;
+      if (!forceRefresh && isConfirmedRef.current) return;
 
-    try {
-      const { data: appointment } = await api.get(
-        `/appointments/${appointmentId}/track`
-      );
+      try {
+        const { data: appointment } = await api.get(
+          `/appointments/${appointmentId}/track`
+        );
 
-      // Tratamento para status de finalização
-      if (['finished', 'cancelled', 'no_show'].includes(appointment.status)) {
-        toast({
-          title: 'Agendamento finalizado',
-          description: 'Este agendamento já foi concluído ou cancelado.',
-          duration: 10000,
-        });
-        router.push('/');
-        return;
-      }
-
-      // Bloqueia confirmação se já em atendimento
-      if (appointment.status === 'in_progress' && !isConfirmedRef.current) {
-        toast({
-          title: 'Agendamento em andamento',
-          description:
-            'Seu atendimento já foi iniciado. Não é possível confirmar novamente.',
-          duration: 10000,
-        });
-        setIsConfirmed(true);
-        return;
-      }
-
-      // Mapeia serviços usando a nova função híbrida
-      const servicesMapped = mapServicesFromBackend(appointment);
-
-      // Se já confirmado
-      if (appointment.status === 'confirmed' && !isConfirmedRef.current) {
-        let formattedEta = '';
-
-        // Pega o primeiro estimatedStart dos serviços SOLICITADOS
-        const firstService = getFirstRequestedService(appointment);
-        if (firstService) {
-          const etaDate = new Date(firstService.estimatedStart);
-          formattedEta = etaDate.toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
+        // Tratamento para status de finalização
+        if (['finished', 'cancelled', 'no_show'].includes(appointment.status)) {
+          toast({
+            title: 'Agendamento finalizado',
+            description: 'Este agendamento já foi concluído ou cancelado.',
+            duration: 10000,
           });
+          router.push('/');
+          return;
+        }
+
+        // Bloqueia confirmação se já em atendimento
+        if (appointment.status === 'in_progress' && !isConfirmedRef.current) {
+          toast({
+            title: 'Agendamento em andamento',
+            description:
+              'Seu atendimento já foi iniciado. Não é possível confirmar novamente.',
+            duration: 10000,
+          });
+          setIsConfirmed(true);
+          return;
+        }
+
+        // Mapeia serviços usando a nova função híbrida
+        const servicesMapped = mapServicesFromBackend(appointment);
+        const checkinDeadlineLabel = appointment?.checkinDeadlineAt
+          ? new Date(appointment.checkinDeadlineAt).toLocaleTimeString(
+              'pt-BR',
+              {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'America/Sao_Paulo',
+              }
+            )
+          : undefined;
+
+        // Se já confirmado ou já chegou presencialmente (arrived)
+        if (
+          ['confirmed', 'arrived'].includes(appointment.status) &&
+          !isConfirmedRef.current
+        ) {
+          let formattedEta = '';
+
+          // Pega o primeiro estimatedStart dos serviços SOLICITADOS
+          const firstService = getFirstRequestedService(appointment);
+          if (firstService) {
+            const etaDate = new Date(firstService.estimatedStart);
+            formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+          } else {
+            const fallbackMinutes = Number(
+              appointment.remainingTime ?? appointment.waitTimeMinutes ?? 0
+            );
+            if (Number.isFinite(fallbackMinutes) && fallbackMinutes >= 0) {
+              const etaDate = new Date(Date.now() + fallbackMinutes * 60000);
+              formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'America/Sao_Paulo',
+              });
+            }
+          }
+
+          setData({
+            initialTime: Number(
+              appointment.remainingTime ?? appointment.waitTimeMinutes ?? 0
+            ),
+            initialPosition: appointment.position ?? null,
+            serviceData: servicesMapped,
+            clientPhone: appointment.clientPhone || '',
+            salonId: appointment.salonId ?? null,
+            notified: appointment.notified ?? false,
+            status: appointment.status,
+            confirmedEta: formattedEta,
+            checkinDeadlineLabel,
+          });
+          setIsConfirmed(true);
+          return;
+        }
+
+        // Dados normais de fila
+        let formattedEta = undefined;
+        if (appointment.notified) {
+          const firstService = getFirstRequestedService(appointment);
+          if (firstService) {
+            const etaDate = new Date(firstService.estimatedStart);
+            formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+          }
         }
 
         setData({
@@ -238,48 +319,26 @@ export default function QueuePage() {
           initialPosition: appointment.position ?? null,
           serviceData: servicesMapped,
           clientPhone: appointment.clientPhone || '',
+          salonId: appointment.salonId ?? null,
           notified: appointment.notified ?? false,
+          status: appointment.status,
           confirmedEta: formattedEta,
+          checkinDeadlineLabel,
         });
-        setIsConfirmed(true);
-        return;
+        // Sucesso - sem erros
+      } catch (error: any) {
+        console.error('Erro ao buscar agendamento:', error);
+
+        toast({
+          title: 'Falha ao carregar',
+          description: 'Agendamento não encontrado ou erro de conexão.',
+          variant: 'destructive',
+          duration: 10000,
+        });
       }
-
-      // Dados normais de fila
-      let formattedEta = undefined;
-      if (appointment.notified) {
-        const firstService = getFirstRequestedService(appointment);
-        if (firstService) {
-          const etaDate = new Date(firstService.estimatedStart);
-          formattedEta = etaDate.toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-        }
-      }
-
-      setData({
-        initialTime: Number(
-          appointment.remainingTime ?? appointment.waitTimeMinutes ?? 0
-        ),
-        initialPosition: appointment.position ?? null,
-        serviceData: servicesMapped,
-        clientPhone: appointment.clientPhone || '',
-        notified: appointment.notified ?? false,
-        confirmedEta: formattedEta,
-      });
-      // Sucesso - sem erros
-    } catch (error: any) {
-      console.error('Erro ao buscar agendamento:', error);
-
-      toast({
-        title: 'Falha ao carregar',
-        description: 'Agendamento não encontrado ou erro de conexão.',
-        variant: 'destructive',
-        duration: 10000,
-      });
-    }
-  }, [appointmentId, toast, router]);
+    },
+    [appointmentId, toast, router]
+  );
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -295,7 +354,7 @@ export default function QueuePage() {
       } else {
         clearInterval(intervalId);
       }
-    }, 30000);
+    }, 60000);
 
     return () => clearInterval(intervalId);
   }, [fetchData]);
@@ -347,24 +406,86 @@ export default function QueuePage() {
         minute: '2-digit',
       });
     }
+    if (!formattedEta) {
+      const fallbackMinutes = Number(data.initialTime ?? 0);
+      if (Number.isFinite(fallbackMinutes) && fallbackMinutes >= 0) {
+        const etaDate = new Date(Date.now() + fallbackMinutes * 60000);
+        formattedEta = etaDate.toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'America/Sao_Paulo',
+        });
+      }
+    }
 
     return (
       <div className="flex flex-col items-center justify-center">
         <Card className="w-full max-w-sm text-center">
           <CardHeader>
             <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
-            <CardTitle>Presença Confirmada!</CardTitle>
+            <CardTitle>
+              {data.status === 'arrived'
+                ? 'Check-in confirmado!'
+                : 'Presença Confirmada!'}
+            </CardTitle>
             <CardDescription>
-              Obrigado! Pode se dirigir ao salão.
+              {data.status === 'arrived'
+                ? 'Sua chegada foi registrada. Aguarde o início do atendimento.'
+                : 'Obrigado! Pode se dirigir ao salão.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-lg">Seu atendimento está confirmado para:</p>
-            <p className="text-5xl font-bold text-primary">
-              {formattedEta || '--:--'}
-            </p>
+            {data.status === 'arrived' ? (
+              <div className="space-y-2">
+                <p className="text-lg">Seu check-in foi validado.</p>
+                <p className="text-sm text-muted-foreground">
+                  Você já está dentro da fila presencial do salão.
+                </p>
+                {data.confirmedEta && (
+                  <p className="pt-2 text-sm text-muted-foreground">
+                    Previsão de atendimento:{' '}
+                    <span className="font-semibold text-foreground">
+                      {data.confirmedEta}
+                    </span>
+                  </p>
+                )}
+              </div>
+            ) : (
+              <>
+                <p className="text-lg">Seu atendimento está previsto para:</p>
+                <p className="text-5xl font-bold text-primary">
+                  {formattedEta || '--:--'}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Assim que chegar ao salão, escaneie o QR da recepção para
+                  registrar sua presença.
+                </p>
+                {data.checkinDeadlineLabel && (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Limite para check-in:{' '}
+                    <span className="font-semibold text-foreground">
+                      {data.checkinDeadlineLabel}
+                    </span>
+                  </p>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
+
+        {data.status === 'confirmed' && data.salonId ? (
+          <div className="mt-6 w-full max-w-md">
+            <SalonCheckinScanner
+              appointmentId={appointmentId}
+              salonId={data.salonId}
+              clientPhone={data.clientPhone}
+              onCancel={handleCancel}
+              onSuccess={async () => {
+                await fetchData(true);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -372,9 +493,12 @@ export default function QueuePage() {
   return (
     <div className="flex flex-col items-center justify-center">
       <div className="p-4">
-        {data.notified || (data.initialTime > 20 && data.initialTime <= 30) ? (
+        {data.notified ||
+        (data.initialTime > AUTO_CANCEL_THRESHOLD_MINUTES &&
+          data.initialTime <= CONFIRMATION_NOTICE_MINUTES) ? (
           <TimeConfirmationView
             remainingTime={data.initialTime}
+            autoCancelThresholdMinutes={AUTO_CANCEL_THRESHOLD_MINUTES}
             onConfirm={() =>
               handleFinalConfirmation(data.initialTime, data.clientPhone)
             }

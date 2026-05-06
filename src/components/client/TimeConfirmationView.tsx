@@ -25,25 +25,30 @@ import {
 
 interface TimeConfirmationViewProps {
   remainingTime: number;
+  autoCancelThresholdMinutes?: number;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 export function TimeConfirmationView({
   remainingTime,
+  autoCancelThresholdMinutes = 20,
   onConfirm,
   onCancel,
 }: TimeConfirmationViewProps) {
-  const hasAutoConfirmed = useRef(false);
+  const hasAutoCancelled = useRef(false);
 
   useEffect(() => {
-    if (remainingTime <= 20 && !hasAutoConfirmed.current) {
-      hasAutoConfirmed.current = true;
-      onConfirm();
+    if (
+      remainingTime <= autoCancelThresholdMinutes &&
+      !hasAutoCancelled.current
+    ) {
+      hasAutoCancelled.current = true;
+      onCancel();
     }
-  }, [remainingTime, onConfirm]);
+  }, [remainingTime, autoCancelThresholdMinutes, onCancel]);
 
-  const timeInWindow = remainingTime - 20;
+  const timeUntilAutoCancel = remainingTime - autoCancelThresholdMinutes;
 
   return (
     <Card className="w-full max-w-sm border-4 border-yellow-500 text-center">
@@ -52,13 +57,13 @@ export function TimeConfirmationView({
           <AlertTriangle className="h-12 w-12 text-yellow-500" />
         </div>
         <CardTitle className="text-2xl">
-          Sua Vez está
-          <br /> Chegando!
+          Sua Vez Está
+          <br /> Chegando
         </CardTitle>
         <CardDescription>
           Falta pouco para o seu atendimento.
           <br />
-          Por favor, confirme sua presença
+          Confirme sua presença
           <br />
           para garantir seu horário.
         </CardDescription>
@@ -70,16 +75,17 @@ export function TimeConfirmationView({
         </div>
         <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-950">
           <p className="text-xs text-blue-700 dark:text-blue-300">
-            ℹ️ A confirmação acontecerá automaticamente quando faltar 20 minutos
-            ou menos
+            Se não houver confirmação, o atendimento será cancelado
+            automaticamente quando faltarem {autoCancelThresholdMinutes} minutos
+            ou menos.
           </p>
         </div>
       </CardContent>
       <CardFooter className="flex flex-col gap-2">
         <Button type="button" className="w-full" onClick={onConfirm}>
-          Confirmar Presença{' '}
-          <span className="fonte-bold">
-            ({timeInWindow > 0 ? timeInWindow : 0} min)
+          Confirmar Presença
+          <span className="ml-1 font-bold">
+            ({timeUntilAutoCancel > 0 ? timeUntilAutoCancel : 0} min)
           </span>
         </Button>
 

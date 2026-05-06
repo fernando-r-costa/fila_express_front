@@ -28,10 +28,11 @@ import { TimeEstimateView } from '@/components/client/TimeEstimateView';
 import { AILoadingState } from '@/components/client/AILoadingState';
 import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { useRouter } from 'next/navigation';
 
-type ClientData = { name: string; phone: string; email: string };
-type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
-type WaitData = {
+export type ClientData = { name: string; phone: string; email: string };
+export type ServiceData = { [serviceName: string]: boolean };
+export type WaitData = {
   estimatedTime: number;
   position: number;
   startTime?: string;
@@ -66,13 +67,22 @@ export function ClientSignUpFlow({
     'Inteligência Artificial'
   );
   const { toast } = useToast();
+  const router = useRouter();
 
   const mapServicesToBackend = (services: ServiceData): string[] => {
-    const mapped: string[] = [];
-    if (services.manicure) mapped.push('manicure');
-    if (services.pedicure) mapped.push('pedicure');
-    if (services.escova) mapped.push('brush');
-    return mapped;
+    return Array.from(
+      new Set(
+        Object.entries(services)
+          .filter(([, selected]) => Boolean(selected))
+          .map(([serviceName]) => {
+            const normalized = String(serviceName || '')
+              .trim()
+              .toLowerCase();
+            return normalized === 'escova' ? 'brush' : normalized;
+          })
+          .filter(Boolean)
+      )
+    );
   };
 
   const handleIdentificationSuccess = (data: ClientData) => {
@@ -109,6 +119,7 @@ export function ClientSignUpFlow({
         servicesRequested,
         clientName: clientData?.name,
         clientPhone: clientData?.phone,
+        clientEmail: clientData?.email,
       });
 
       if (
@@ -153,6 +164,20 @@ export function ClientSignUpFlow({
       ) {
         errorMessage =
           'Servidor ocupado. A fila de atendimento está sendo processada. Aguarde alguns segundos e tente novamente.';
+      } else if ((error as any).response?.status === 409) {
+        const pendingId = (error as any).response?.data?.appointmentId;
+        errorMessage =
+          (error as any).response?.data?.error ||
+          'Você já possui um atendimento em andamento. Abrindo o rastreamento.';
+        if (pendingId) {
+          toast({
+            title: 'Atendimento pendente encontrado',
+            description: 'Você já possui um atendimento em andamento.',
+            duration: 10000,
+          });
+          router.push(`/fila/${pendingId}`);
+          return;
+        }
       } else if ((error as any).response?.status === 500) {
         errorMessage = 'Erro no servidor. Tente novamente em alguns segundos.';
       } else if ((error as any).response?.status === 400) {
@@ -232,6 +257,25 @@ export function ClientSignUpFlow({
         ) {
           errorMessage =
             'Estamos processando sua entrada na fila. Aguarde alguns segundos e tente confirmar novamente. Caso já tenha sido criado, o salão verá seu nome no painel.';
+        } else if ((error as any).response?.status === 409) {
+          const pendingId = (error as any).response?.data?.appointmentId;
+          errorMessage =
+            (error as any).response?.data?.error ||
+            'Você já possui um atendimento em andamento. Abrindo o rastreamento.';
+
+          if (pendingId) {
+            toast({
+              title: 'Atendimento pendente encontrado',
+              description: 'Você já possui um atendimento em andamento.',
+              duration: 10000,
+            });
+            router.push(`/fila/${pendingId}`);
+            return;
+          }
+        } else if ((error as any).response?.status === 403) {
+          errorMessage =
+            (error as any).response?.data?.error ||
+            'Seu cadastro está temporariamente bloqueado por no-show. Entre em contato com o salão.';
         }
 
         toast({
@@ -277,6 +321,7 @@ export function ClientSignUpFlow({
           return (
             <ServiceSelectionForm
               clientData={clientData}
+              salonId={salonId}
               onSuccess={handleServiceSelectionSuccess}
             />
           );
