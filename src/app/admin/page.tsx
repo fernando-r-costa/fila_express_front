@@ -5,6 +5,16 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Card,
   CardContent,
   CardDescription,
@@ -24,6 +34,12 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [confirmSessionReplaceOpen, setConfirmSessionReplaceOpen] =
+    useState(false);
+  const [pendingLogin, setPendingLogin] = useState<{
+    username: string;
+    password: string;
+  } | null>(null);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -35,9 +51,48 @@ export default function AdminLoginPage() {
 
       if (success) {
         router.push('/admin/dashboard');
+      } else {
+        setIsLoading(false);
       }
     } catch (err: any) {
       global.console.error('Falha no login:', err);
+      if (err.response?.data?.code === 'SESSION_LIMIT_REACHED') {
+        setPendingLogin({ username, password });
+        setConfirmSessionReplaceOpen(true);
+        setIsLoading(false);
+        return;
+      }
+
+      setError(
+        err.response?.data?.error || 'Falha ao conectar com o servidor.'
+      );
+      setIsLoading(false);
+    }
+  };
+
+  const handleConfirmSessionReplace = async () => {
+    if (!pendingLogin) return;
+
+    setIsLoading(true);
+    setError(null);
+    setConfirmSessionReplaceOpen(false);
+
+    try {
+      const success = await login(
+        pendingLogin.username,
+        pendingLogin.password,
+        {
+          forceOldestSession: true,
+        }
+      );
+
+      if (success) {
+        router.push('/admin/dashboard');
+      } else {
+        setIsLoading(false);
+      }
+    } catch (err: any) {
+      global.console.error('Falha no login confirmado:', err);
       setError(
         err.response?.data?.error || 'Falha ao conectar com o servidor.'
       );
@@ -92,6 +147,30 @@ export default function AdminLoginPage() {
           </CardFooter>
         </Card>
       </form>
+      <AlertDialog
+        open={confirmSessionReplaceOpen}
+        onOpenChange={setConfirmSessionReplaceOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Limite de sessões atingido</AlertDialogTitle>
+            <AlertDialogDescription>
+              Este salão já está conectado em 3 máquinas. Se prosseguir, a
+              primeira sessão logada será deslogada.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLoading}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmSessionReplace}
+              disabled={isLoading}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Prosseguir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
