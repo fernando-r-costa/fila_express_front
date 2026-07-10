@@ -17,7 +17,11 @@ interface IAuthContextType {
   token: string | null;
   salonId: number | null;
   loading: boolean;
-  login: (adminUser: string, adminPassword: string) => Promise<boolean>;
+  login: (
+    adminUser: string,
+    adminPassword: string,
+    options?: { forceOldestSession?: boolean }
+  ) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -95,11 +99,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [logout, token, toast]);
 
   const login = useCallback(
-    async (adminUser: string, adminPassword: string): Promise<boolean> => {
+    async (
+      adminUser: string,
+      adminPassword: string,
+      options?: { forceOldestSession?: boolean }
+    ): Promise<boolean> => {
       try {
         const response = await api.post('salon/login', {
           adminUser,
           adminPassword,
+          forceOldestSession: Boolean(options?.forceOldestSession),
         });
 
         const { token: newToken } = response.data;
@@ -123,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false;
       } catch (error) {
         console.error('Erro no login:', error);
-        return false;
+        throw error;
       }
     },
     []
