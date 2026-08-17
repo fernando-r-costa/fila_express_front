@@ -1,4 +1,5 @@
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const isProduction = process.env.WORKERS_CI_BRANCH === 'main';
@@ -60,4 +61,47 @@ if (result.error) {
   process.exit(1);
 }
 
-process.exit(result.status ?? 1);
+if (result.status !== 0) {
+  process.exit(result.status ?? 1);
+}
+
+const collectJavaScriptFiles = (directory) => {
+  if (!fs.existsSync(directory)) {
+    return [];
+  }
+
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      return collectJavaScriptFiles(entryPath);
+    }
+
+    return entry.isFile() && entry.name.endsWith('.js') ? [entryPath] : [];
+  });
+};
+
+const clientBundleRoots = [
+  path.join(process.cwd(), '.next', 'static'),
+  path.join(process.cwd(), '.open-next', 'assets', '_next', 'static'),
+];
+const clientBundleFiles = clientBundleRoots.flatMap(collectJavaScriptFiles);
+const devApiFileCount = clientBundleFiles.filter((file) =>
+  fs.readFileSync(file, 'utf8').includes('frc-api-dev.onrender.com')
+).length;
+const prodApiFileCount = clientBundleFiles.filter((file) =>
+  fs.readFileSync(file, 'utf8').includes('frc-api-latest.onrender.com')
+).length;
+
+console.log(
+  `[build:cloudflare] bundle contains DEV API=${devApiFileCount > 0}`
+);
+console.log(
+  `[build:cloudflare] bundle contains PROD API=${prodApiFileCount > 0}`
+);
+console.log(`[build:cloudflare] bundle DEV API file count=${devApiFileCount}`);
+console.log(
+  `[build:cloudflare] bundle PROD API file count=${prodApiFileCount}`
+);
+
+process.exit(0);
