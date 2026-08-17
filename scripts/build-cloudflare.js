@@ -21,6 +21,22 @@ if (!apiUrl) {
   process.exit(1);
 }
 
+let selectedApiUrl;
+
+try {
+  selectedApiUrl = new URL(apiUrl);
+} catch {
+  console.error(`Invalid URL in build variable: ${sourceVariable}`);
+  process.exit(1);
+}
+
+console.log(
+  `[build:cloudflare] selected API hostname=${selectedApiUrl.hostname}`
+);
+console.log(
+  `[build:cloudflare] selected API pathname=${selectedApiUrl.pathname}`
+);
+
 const cli = path.join(
   process.cwd(),
   'node_modules',
