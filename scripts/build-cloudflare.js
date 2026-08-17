@@ -7,6 +7,15 @@ const sourceVariable = isProduction
   : 'NEXT_PUBLIC_API_URL_DEV';
 const apiUrl = process.env[sourceVariable];
 
+console.log(
+  `[build:cloudflare] WORKERS_CI_BRANCH=${process.env.WORKERS_CI_BRANCH ?? '(undefined)'}`
+);
+console.log(`[build:cloudflare] isProduction=${isProduction}`);
+console.log(`[build:cloudflare] sourceVariable=${sourceVariable}`);
+console.log(
+  `[build:cloudflare] parent NEXT_PUBLIC_API_URL defined=${Boolean(process.env.NEXT_PUBLIC_API_URL)}`
+);
+
 if (!apiUrl) {
   console.error(`Missing required build variable: ${sourceVariable}`);
   process.exit(1);
