@@ -2,6 +2,9 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
+  images: {
+    qualities: [75, 90],
+  },
   // Allow cross-origin requests from local network IP in development
   ...(process.env.NODE_ENV === 'development' && {
     // @ts-ignore - allowedDevOrigins is experimental but not in types
