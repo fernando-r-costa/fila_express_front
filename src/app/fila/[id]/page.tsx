@@ -39,7 +39,7 @@ const AUTO_CANCEL_THRESHOLD_MINUTES = 20;
 type TrackingData = {
   initialTime: number;
   initialPosition: number | null;
-  serviceData: { manicure: boolean; pedicure: boolean; escova: boolean };
+  serviceData: string[];
   clientPhone: string;
   salonId?: number | null;
   notified: boolean;
@@ -71,7 +71,6 @@ export default function QueuePage() {
 
   // --- LÓGICA DE MAPEAMENTO HÍBRIDA (NOVO + LEGADO) ---
   const mapServicesFromBackend = (appointmentData: any) => {
-    const servicesMap = { manicure: false, pedicure: false, escova: false };
     let serviceNames: string[] = [];
 
     // Cenário 1: Backend Novo (Relacional) -> services: [{ serviceName: 'brush' }, ...]
@@ -87,12 +86,10 @@ export default function QueuePage() {
       serviceNames = appointmentData.servicesRequested;
     }
 
-    if (serviceNames.includes('manicure')) servicesMap.manicure = true;
-    if (serviceNames.includes('pedicure')) servicesMap.pedicure = true;
-    if (serviceNames.includes('brush') || serviceNames.includes('escova'))
-      servicesMap.escova = true;
-
-    return servicesMap;
+    return serviceNames.filter(
+      (serviceName): serviceName is string =>
+        typeof serviceName === 'string' && serviceName.trim().length > 0
+    );
   };
 
   // Helper para pegar o primeiro serviço SOLICITADO (ignora not_requested)

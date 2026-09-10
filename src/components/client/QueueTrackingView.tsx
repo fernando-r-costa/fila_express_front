@@ -22,10 +22,22 @@ import {
 } from '@/components/ui/card';
 import { Clock, Bell } from 'lucide-react';
 
-type ServiceData = {
-  manicure: boolean;
-  pedicure: boolean;
-  escova: boolean;
+type ServiceData = string[];
+
+const SERVICE_LABELS: Record<string, string> = {
+  manicure: 'Manicure',
+  pedicure: 'Pedicure',
+  brush: 'Escova',
+  escova: 'Escova',
+};
+
+const formatServiceLabel = (serviceName: string) => {
+  const trimmed = serviceName.trim();
+  const normalized = trimmed.toLowerCase();
+  return (
+    SERVICE_LABELS[normalized] ||
+    trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+  );
 };
 
 interface QueueTrackingViewProps {
@@ -39,7 +51,7 @@ interface QueueTrackingViewProps {
 export function QueueTrackingView({
   initialPosition = 5,
   initialTime = 45,
-  serviceData = { manicure: true, pedicure: true, escova: false },
+  serviceData = [],
   onCancel,
   onFinalConfirmation,
 }: QueueTrackingViewProps) {
@@ -57,9 +69,7 @@ export function QueueTrackingView({
     setEta(formattedEta);
   }, [initialTime]);
 
-  const selectedServices = Object.entries(serviceData)
-    .filter(([, isSelected]) => isSelected)
-    .map(([service]) => service.charAt(0).toUpperCase() + service.slice(1));
+  const selectedServices = serviceData.map(formatServiceLabel);
 
   return (
     <div className="flex w-full justify-center">
@@ -88,8 +98,8 @@ export function QueueTrackingView({
             <div>
               <h3 className="font-semibold">Serviços Selecionados:</h3>
               <ul className="mt-2 list-inside list-disc text-primary">
-                {selectedServices.map((service) => (
-                  <li key={service}>{service}</li>
+                {selectedServices.map((service, index) => (
+                  <li key={`${service}-${index}`}>{service}</li>
                 ))}
               </ul>
             </div>
