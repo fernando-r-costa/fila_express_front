@@ -32,6 +32,7 @@ import {
 import { CheckCircle, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { observeAppointmentStatus, trackAnalyticsEvent } from '@/lib/analytics';
 
 const CONFIRMATION_NOTICE_MINUTES = 30;
 const AUTO_CANCEL_THRESHOLD_MINUTES = 20;
@@ -214,6 +215,12 @@ export default function QueuePage() {
           `/appointments/${appointmentId}/track`
         );
 
+        observeAppointmentStatus({
+          appointmentId,
+          status: appointment.status,
+          source: 'tracker',
+        });
+
         // Tratamento para status de finalização
         if (['finished', 'cancelled', 'no_show'].includes(appointment.status)) {
           toast({
@@ -356,13 +363,20 @@ export default function QueuePage() {
     return () => clearInterval(intervalId);
   }, [fetchData]);
 
-  const handleCancel = async () => {
+  const handleCancel = async (trigger: 'user' | 'auto_threshold' = 'user') => {
     if (!data?.clientPhone) return;
     try {
       await api.patch(`/appointments/${appointmentId}/remove`, {
         reason: 'cancelled',
         clientPhone: data.clientPhone,
       });
+      if (trigger === 'user') {
+        trackAnalyticsEvent('appointment_cancelled_by_client', {
+          appointment_id: String(appointmentId),
+          source: 'tracker',
+          actor: 'client',
+        });
+      }
       toast({
         title: 'Atendimento cancelado',
         description: 'Você saiu da fila.',
@@ -476,7 +490,7 @@ export default function QueuePage() {
               appointmentId={appointmentId}
               salonId={data.salonId}
               clientPhone={data.clientPhone}
-              onCancel={handleCancel}
+              onCancel={() => handleCancel('user')}
               onSuccess={async () => {
                 await fetchData(true);
               }}
@@ -499,14 +513,14 @@ export default function QueuePage() {
             onConfirm={() =>
               handleFinalConfirmation(data.initialTime, data.clientPhone)
             }
-            onCancel={handleCancel}
+            onCancel={(trigger) => handleCancel(trigger)}
           />
         ) : (
           <QueueTrackingView
             initialTime={data.initialTime}
             initialPosition={data.initialPosition ?? undefined}
             serviceData={data.serviceData}
-            onCancel={handleCancel}
+            onCancel={() => handleCancel('user')}
             onFinalConfirmation={handleFinalConfirmation}
           />
         )}

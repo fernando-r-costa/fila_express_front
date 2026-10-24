@@ -29,6 +29,7 @@ import { AILoadingState } from '@/components/client/AILoadingState';
 import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
+import { trackAnalyticsEvent } from '@/lib/analytics';
 
 export type ClientData = { name: string; phone: string; email: string };
 export type ServiceData = { [serviceName: string]: boolean };
@@ -50,12 +51,14 @@ interface ClientSignUpFlowProps {
   ) => void;
   onCancel: () => void;
   salonId?: number; // necessário para integração com a API pública
+  analyticsContext?: 'public' | 'admin';
 }
 
 export function ClientSignUpFlow({
   onFlowComplete,
   onCancel,
   salonId,
+  analyticsContext = 'public',
 }: ClientSignUpFlowProps) {
   const [formStep, setFormStep] = useState('identification');
   const [clientData, setClientData] = useState<ClientData | null>(null);
@@ -86,6 +89,12 @@ export function ClientSignUpFlow({
   };
 
   const handleIdentificationSuccess = (data: ClientData) => {
+    if (analyticsContext === 'public') {
+      trackAnalyticsEvent('client_flow_started', {
+        source: 'public',
+        actor: 'client',
+      });
+    }
     setClientData(data);
     setFormStep('serviceSelection');
   };
@@ -112,6 +121,15 @@ export function ClientSignUpFlow({
 
       setIsCalculatingTime(true);
       const servicesRequested = mapServicesToBackend(services);
+
+      if (analyticsContext === 'public') {
+        trackAnalyticsEvent('estimate_requested', {
+          source: 'public',
+          actor: 'client',
+          salon_id: salonId,
+          service_count: servicesRequested.length,
+        });
+      }
 
       // Estimar tempo de espera via IA (sem salvar no banco ainda)
       const { data } = await api.post('/estimate-time', {
@@ -140,6 +158,15 @@ export function ClientSignUpFlow({
           duration: 10000,
         });
         return;
+      }
+
+      if (analyticsContext === 'public') {
+        trackAnalyticsEvent('estimate_succeeded', {
+          source: 'public',
+          actor: 'client',
+          salon_id: salonId,
+          service_count: servicesRequested.length,
+        });
       }
 
       setWaitData({
@@ -216,6 +243,13 @@ export function ClientSignUpFlow({
       }
 
       setIsJoiningQueue(true);
+      if (analyticsContext === 'public') {
+        trackAnalyticsEvent('estimate_accepted', {
+          source: 'public',
+          actor: 'client',
+          salon_id: salonId,
+        });
+      }
       try {
         const servicesRequested = mapServicesToBackend(serviceData);
         const payload = {
@@ -234,6 +268,16 @@ export function ClientSignUpFlow({
 
         if (!createdId) {
           throw new Error('ID do agendamento não retornado pelo servidor.');
+        }
+
+        if (analyticsContext === 'public') {
+          trackAnalyticsEvent('appointment_created', {
+            appointment_id: String(createdId),
+            source: 'public',
+            actor: 'client',
+            salon_id: salonId,
+            service_count: servicesRequested.length,
+          });
         }
 
         const nextWait: WaitData = {

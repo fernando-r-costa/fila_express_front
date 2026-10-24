@@ -87,6 +87,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { observeAppointmentStatus, trackAnalyticsEvent } from '@/lib/analytics';
 
 type ClientData = { name: string; phone: string; email: string };
 type ServiceData = { manicure: boolean; pedicure: boolean; escova: boolean };
@@ -1050,6 +1051,13 @@ export default function DashboardPage() {
         );
 
         // Mapear cada item com o novo mapper inteligente
+        response.data.forEach((appointment: any) => {
+          observeAppointmentStatus({
+            appointmentId: appointment.appointmentId,
+            status: appointment.status,
+            source: 'dashboard',
+          });
+        });
         const mappedData = response.data.map(mapApiDataToClient);
 
         setQueueData(mappedData);
@@ -1330,6 +1338,13 @@ export default function DashboardPage() {
         services: callNextServices,
         attendantAssignments,
       });
+      trackAnalyticsEvent('admin_call_next_succeeded', {
+        appointment_id: callNextClientId,
+        actor: 'admin',
+        source: 'dashboard',
+        salon_id: salonId,
+        service_count: callNextServices.length,
+      });
       await fetchQueueData({ silent: true });
       const clientName = response.data?.client?.clientName || 'Cliente';
       toast({
@@ -1420,9 +1435,23 @@ export default function DashboardPage() {
           await api.patch(`/appointments/${clientId}/finish-service`, {
             serviceName: serviceName,
           });
+          trackAnalyticsEvent('admin_service_finished', {
+            appointment_id: clientId,
+            actor: 'admin',
+            source: 'dashboard',
+            salon_id: salonId,
+            service: serviceName,
+          });
         }
       } else {
         await api.patch(`/appointments/${clientId}/finish`);
+        trackAnalyticsEvent('admin_service_finished', {
+          appointment_id: clientId,
+          actor: 'admin',
+          source: 'dashboard',
+          salon_id: salonId,
+          service: 'all',
+        });
       }
       await fetchQueueData({ silent: true });
       toast({
@@ -1457,6 +1486,12 @@ export default function DashboardPage() {
 
       const { data } = await api.patch(`/appointments/${clientId}/remove`, {
         reason: 'cancelled',
+      });
+      trackAnalyticsEvent('admin_appointment_cancelled', {
+        appointment_id: clientId,
+        actor: 'admin',
+        source: 'dashboard',
+        salon_id: salonId,
       });
       toast({
         title: '✋ Cancelamento Registrado',
@@ -1495,6 +1530,12 @@ export default function DashboardPage() {
 
       const { data } = await api.patch(`/appointments/${clientId}/remove`, {
         reason: 'no_show',
+      });
+      trackAnalyticsEvent('admin_appointment_no_show', {
+        appointment_id: clientId,
+        actor: 'admin',
+        source: 'dashboard',
+        salon_id: salonId,
       });
       toast({
         title: '⚠️ No-Show Registrado',
@@ -1861,6 +1902,7 @@ export default function DashboardPage() {
                   onFlowComplete={handleManualAddComplete}
                   onCancel={() => setIsSheetOpen(false)}
                   salonId={salonId ?? undefined}
+                  analyticsContext="admin"
                 />
               </SheetContent>
             </Sheet>

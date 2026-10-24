@@ -27,13 +27,17 @@ const cli = path.join(
   'index.js'
 );
 
-const result = spawnSync(process.execPath, [cli, 'build'], {
-  env: {
-    ...process.env,
-    NEXT_PUBLIC_API_URL: apiUrl,
-  },
-  stdio: 'inherit',
-});
+const result = spawnSync(
+  process.execPath,
+  [cli, 'build', '--dangerouslyUseUnsupportedNextVersion'],
+  {
+    env: {
+      ...process.env,
+      NEXT_PUBLIC_API_URL: apiUrl,
+    },
+    stdio: 'inherit',
+  }
+);
 
 if (result.error) {
   console.error('Unable to start the OpenNext build.');
