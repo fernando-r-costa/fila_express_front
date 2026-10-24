@@ -25,6 +25,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, AlertCircle } from 'lucide-react';
+import { trackAnalyticsEvent } from '@/lib/analytics';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -50,6 +51,7 @@ export default function AdminLoginPage() {
       const success = await login(username, password);
 
       if (success) {
+        trackAnalyticsEvent('admin_login_succeeded', { actor: 'admin' });
         router.push('/admin/dashboard');
       } else {
         setIsLoading(false);
@@ -87,6 +89,7 @@ export default function AdminLoginPage() {
       );
 
       if (success) {
+        trackAnalyticsEvent('admin_login_succeeded', { actor: 'admin' });
         router.push('/admin/dashboard');
       } else {
         setIsLoading(false);

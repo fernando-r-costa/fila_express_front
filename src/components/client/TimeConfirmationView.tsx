@@ -27,7 +27,7 @@ interface TimeConfirmationViewProps {
   remainingTime: number;
   autoCancelThresholdMinutes?: number;
   onConfirm: () => void;
-  onCancel: () => void;
+  onCancel: (trigger?: 'user' | 'auto_threshold') => void;
 }
 
 export function TimeConfirmationView({
@@ -44,7 +44,7 @@ export function TimeConfirmationView({
       !hasAutoCancelled.current
     ) {
       hasAutoCancelled.current = true;
-      onCancel();
+      onCancel('auto_threshold');
     }
   }, [remainingTime, autoCancelThresholdMinutes, onCancel]);
 
@@ -106,7 +106,10 @@ export function TimeConfirmationView({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Continuar na fila</AlertDialogCancel>
-              <AlertDialogAction onClick={onCancel} className="bg-destructive">
+              <AlertDialogAction
+                onClick={() => onCancel('user')}
+                className="bg-destructive"
+              >
                 Sim, cancelar
               </AlertDialogAction>
             </AlertDialogFooter>

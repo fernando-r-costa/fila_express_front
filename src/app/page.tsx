@@ -29,6 +29,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/lib/api';
 import { Loader2 } from 'lucide-react';
+import { trackAnalyticsEvent } from '@/lib/analytics';
 import {
   Card,
   CardContent,
@@ -47,6 +48,10 @@ export default function HomePage() {
   const [closedReason, setClosedReason] = useState<
     'before-open' | 'after-close'
   >('after-close');
+
+  useEffect(() => {
+    trackAnalyticsEvent('public_home_viewed', { source: 'public' });
+  }, []);
 
   const salonId = useMemo(() => {
     const envVar = process.env.NEXT_PUBLIC_SALON_ID;
